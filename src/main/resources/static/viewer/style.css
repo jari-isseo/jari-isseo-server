@@ -3,7 +3,7 @@
 body {
   margin: 0;
   font-family: -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
-  background: #faf8f5;
+  background: #f7f5f0;
   color: #222;
 }
 
@@ -18,16 +18,17 @@ h1 { margin: 0 0 4px; font-size: 20px; }
   background: #fff;
 }
 
-/* 바닥 (#5) */
-.floor { fill: #ece6dc; stroke: #b5ab9c; stroke-width: 1.5; stroke-linejoin: round; }
+/* 바닥 (#5) — 디자인 시안 C 기준: 흰 바닥 + 연회색 테두리 */
+.floor { fill: #ffffff; stroke: #d9d9de; stroke-width: 1.2; stroke-linejoin: round; }
 
-/* 뒤쪽 벽: 높이 있는 면 (#5) */
-.wall-face { stroke: #a99f90; stroke-width: 1; stroke-linejoin: round; }
-.wall-face.along-x { fill: #d9d0c2; }   /* x 방향으로 뻗은 벽 */
-.wall-face.along-z { fill: #cdc3b3; }   /* z 방향으로 뻗은 벽 (조금 어둡게) */
+/* 뒤쪽 벽: 연회색 면 + 밝은 윗면(두께) (#5) */
+.wall-face { stroke: #c9c9cf; stroke-width: 1; stroke-linejoin: round; }
+.wall-face.along-x { fill: #ececef; }   /* x 방향 벽 */
+.wall-face.along-z { fill: #e1e1e6; }   /* z 방향 벽 (조금 어둡게) */
+.wall-top { fill: #f6f6f8; stroke: #c9c9cf; stroke-width: 1; stroke-linejoin: round; }
 
-/* 앞쪽 벽·변: 테두리선만 (#5) */
-.wall-front { stroke: #8f8474; stroke-width: 3; stroke-linecap: round; }
+/* 앞쪽 벽·변: 얇은 테두리선만 (#5) */
+.wall-front { stroke: #c9c9cf; stroke-width: 1.5; stroke-linecap: round; }
 
 /* 테이블 중심점 (#6에서 도형으로 바뀜) */
 .table-dot { fill: #2e9e5b; }

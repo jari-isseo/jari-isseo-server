@@ -7,7 +7,8 @@
 // ---------- 설정 ----------
 const SCALE = 60;        // 1m = 60px (가로 기준). 2:1 이라 바닥 세로는 30px
 const HEIGHT_SCALE = 60; // 높이 1m = 화면 위로 60px
-const WALL_HEIGHT = 0.8; // 낮은 벽 높이 (m) — 안쪽이 보이도록 낮게
+const WALL_HEIGHT = 0.8;     // 낮은 벽 높이 (m) — 안쪽이 보이도록 낮게
+const WALL_THICKNESS = 0.12; // 벽 두께 (m) — 윗면이 살짝 보이게
 const PADDING = 40;      // 그림 바깥 여백 (px)
 const SVG_NS = "http://www.w3.org/2000/svg";
 const DEBUG = new URLSearchParams(location.search).get("debug") === "1";
@@ -143,6 +144,21 @@ function drawWalls(svg, floor, points) {
     points.push(...face);
     const dir = Math.abs(x2 - x1) >= Math.abs(z2 - z1) ? "along-x" : "along-z";
     svgEl("polygon", { points: toPoints(face), class: `wall-face ${dir}` }, svg);
+
+    // 윗면: 벽을 바깥쪽으로 두께만큼 밀어낸 띠 (두께감)
+    //   양 끝도 두께만큼 늘려서, 두 벽이 만나는 모서리에 빈틈이 없게 한다
+    const n = inwardNormal(poly, w.from, w.to);
+    const ox = -n.x * WALL_THICKNESS;
+    const oz = -n.z * WALL_THICKNESS;
+    const len = Math.hypot(x2 - x1, z2 - z1) || 1;
+    const ex = ((x2 - x1) / len) * WALL_THICKNESS;
+    const ez = ((z2 - z1) / len) * WALL_THICKNESS;
+    const top = [
+      toScreen(x1 - ex, z1 - ez, WALL_HEIGHT), toScreen(x2 + ex, z2 + ez, WALL_HEIGHT),
+      toScreen(x2 + ex + ox, z2 + ez + oz, WALL_HEIGHT), toScreen(x1 - ex + ox, z1 - ez + oz, WALL_HEIGHT),
+    ];
+    points.push(...top);
+    svgEl("polygon", { points: toPoints(top), class: "wall-top" }, svg);
   }
 }
 
