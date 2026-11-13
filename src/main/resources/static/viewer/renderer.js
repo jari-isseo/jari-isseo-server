@@ -4,6 +4,7 @@
 //  #5: 바닥면 + 벽 (뒤쪽 벽만 높게, 앞쪽은 테두리선)
 //  #6: 테이블·의자 도형 + 가림 순서
 //  #7: 상태 색·테이블 이름·빈자리 요약·정보 오래됨 표시
+//  #8: 테이블 탭 판정 + 화면 크기 자동 맞춤
 // =====================================================
 
 // ---------- 설정 ----------
@@ -22,6 +23,7 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 const PARAMS = new URLSearchParams(location.search);
 const DEBUG = PARAMS.get("debug") === "1";
 const STALE_MINUTES = 30;   // 마지막 상태 변경 후 이 시간이 지나면 '정보 오래됨' (AC-05)
+const MIN_TOUCH_RADIUS_PX = 22; // 작은 테이블도 반지름 22px(지름 44px) 안을 누르면 탭으로 인정 (NFR-04)
 
 // ---------- 투영 함수 ----------
 // 바닥 좌표 (x, z) [m] + 높이 h [m] → 화면 좌표 { sx, sy } [px]
@@ -238,6 +240,7 @@ function counterClockwise(pts) {
 function drawPrism(svg, footprint, height, cls, points) {
   const pts = counterClockwise(footprint);
   const g = svgEl("g", { class: cls }, svg);
+  const polygons = [];   // 화면에 그린 면들(화면 좌표) — 탭 판정에 사용
 
   for (let i = 0; i < pts.length; i++) {
     const [x1, z1] = pts[i];
@@ -251,13 +254,15 @@ function drawPrism(svg, footprint, height, cls, points) {
       toScreen(x2, z2, height), toScreen(x1, z1, height),
     ];
     points.push(...face);
+    polygons.push(face);
     svgEl("polygon", { points: toPoints(face), class: nx > nz ? "side-x" : "side-z" }, g);
   }
 
   const top = pts.map(([x, z]) => toScreen(x, z, height));
   points.push(...top);
+  polygons.push(top);
   svgEl("polygon", { points: toPoints(top), class: "top" }, g);
-  return g;
+  return { g, polygons };
 }
 
 // ---------- 가림 순서 ----------
@@ -339,7 +344,9 @@ function sortByDepth(items) {
 
 // 테이블·의자를 뒤(화면 위쪽)부터 그린다 → 앞의 것이 뒤의 것을 덮음
 //   occupied: tableId → true(손님 있음) / false(빈자리). 상태를 모르면 Map 에 없음 → 회색
+//   반환값: 탭 판정용 테이블 목록 (그린 순서 = 뒤 → 앞)
 function drawFurniture(svg, floor, points, occupied) {
+  const hitTargets = [];
   const items = [
     ...(floor.chairs ?? []).map((c) => ({ kind: "chair", item: c, footprint: chairFootprint(c), height: CHAIR_HEIGHT })),
     ...(floor.tables ?? []).map((t) => ({ kind: "table", item: t, footprint: tableFootprint(t), height: TABLE_HEIGHT })),
@@ -355,14 +362,89 @@ function drawFurniture(svg, floor, points, occupied) {
       drawPrism(svg, footprint, height, "chair", points);
     } else {
       const state = occupied.has(item.id) ? (occupied.get(item.id) ? "busy" : "free") : "";
-      const g = drawPrism(svg, footprint, height, `table ${state}`.trim(), points);
-      g.dataset.tableId = item.id;   // 탭 처리(2-5)·실시간 갱신(4-3)에서 테이블을 찾을 때 사용
+      const { g, polygons } = drawPrism(svg, footprint, height, `table ${state}`.trim(), points);
+      g.dataset.tableId = item.id;   // 탭 처리·실시간 갱신(4-3)에서 테이블을 찾을 때 사용
 
       // 테이블 이름: 윗면 가운데
       const p = toScreen(item.x, item.z, height);
       addText(svg, p.sx, p.sy, item.name, `table-label ${state}`.trim());
+
+      hitTargets.push({ id: item.id, name: item.name, group: g, polygons, center: p });
     }
   }
+  return hitTargets;
+}
+
+// ---------- 테이블 탭 판정 (#8) ----------
+// 화면 좌표 점이 다각형 안에 있는지
+function pointInScreenPolygon(poly, x, y) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i];
+    const b = poly[j];
+    if ((a.sy > y) !== (b.sy > y) && x < ((b.sx - a.sx) * (y - a.sy)) / (b.sy - a.sy) + a.sx) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+// 손가락 위치(화면 픽셀) → SVG 좌표
+function toSvgPoint(svg, clientX, clientY) {
+  const pt = svg.createSVGPoint();
+  pt.x = clientX;
+  pt.y = clientY;
+  return pt.matrixTransform(svg.getScreenCTM().inverse());
+}
+
+// SVG 좌표 1단위가 실제 화면에서 몇 px 인지 (지도 확대 배율)
+function pxPerUnit(svg) {
+  const m = svg.getScreenCTM();
+  return m ? Math.hypot(m.a, m.b) : 1;
+}
+
+// 눌린 테이블 찾기
+//   1) 테이블 도형(윗면·옆면) 안을 눌렀으면 그 테이블. 겹치면 앞(나중에 그린 것)이 우선.
+//   2) 도형 밖이어도, 테이블 가운데에서 MIN_TOUCH_RADIUS_PX 안이면 가장 가까운 테이블.
+//      → 화면에서 작게 보이는 테이블도 손가락으로 누르기 쉬움 (NFR-04)
+function findTappedTable(svg, hitTargets, clientX, clientY) {
+  const p = toSvgPoint(svg, clientX, clientY);
+
+  for (let i = hitTargets.length - 1; i >= 0; i--) {
+    if (hitTargets[i].polygons.some((poly) => pointInScreenPolygon(poly, p.x, p.y))) {
+      return hitTargets[i];
+    }
+  }
+
+  const radius = MIN_TOUCH_RADIUS_PX / pxPerUnit(svg);
+  let best = null;
+  let bestDist = Infinity;
+  for (const t of hitTargets) {
+    const d = Math.hypot(t.center.sx - p.x, t.center.sy - p.y);
+    if (d <= radius && d < bestDist) {
+      best = t;
+      bestDist = d;
+    }
+  }
+  return best;
+}
+
+// 탭 이벤트 연결. 탭 이후 동작(상태 전환·앱에 알리기)은 2-6에서 이 이벤트를 받아 처리한다.
+//   window.addEventListener("tabletap", (e) => e.detail.tableId)
+function enableTableTap(svg, hitTargets) {
+  svg.onclick = (e) => {
+    const hit = findTappedTable(svg, hitTargets, e.clientX, e.clientY);
+    if (!hit) return;
+
+    window.dispatchEvent(new CustomEvent("tabletap", {
+      detail: { tableId: hit.id, name: hit.name },
+    }));
+
+    if (DEBUG) {
+      console.log("tabletap", hit.id, hit.name);
+      hitTargets.forEach((t) => t.group.classList.toggle("tapped", t === hit));
+    }
+  };
 }
 
 // 개발용 기준점: (0,0) (1,0) (0,1) — ?debug=1 일 때만
@@ -398,10 +480,15 @@ function draw(svg, floor, occupied = new Map()) {
 
   drawFloor(svg, floor, points);
   drawWalls(svg, floor, points);
-  drawFurniture(svg, floor, points, occupied);
+  const hitTargets = drawFurniture(svg, floor, points, occupied);
   if (DEBUG) drawAxes(svg, points);
 
+  // viewBox + preserveAspectRatio(meet) → 화면 크기·방향과 상관없이 매장 전체가 보이고 가운데 정렬됨.
+  // 화면을 돌리거나 창 크기가 바뀌어도 브라우저가 자동으로 다시 맞춘다.
   fitViewBox(svg, points);
+  svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+
+  enableTableTap(svg, hitTargets);
 }
 
 // ---------- 상단 요약 (#7) ----------
