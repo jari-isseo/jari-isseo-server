@@ -23,6 +23,9 @@
     jari-isseo-server/
     ├── src/main/java/com/jariisseo/
     │   ├── JariisseoApplication.java   서버 시작점
+    │   ├── store/                      매장 (Store, publicId 생성)
+    │   ├── layout/                     배치 (Layout, JSON 컬럼)
+    │   ├── status/                     테이블 상태 (TableStatus, 복합 키)
     │   └── global/
     │       ├── config/                 공통 설정 (Security, Swagger, dev 샘플 경로)
     │       └── error/                  공통 에러 응답 { code, message }
