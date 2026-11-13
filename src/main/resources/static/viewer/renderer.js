@@ -254,20 +254,100 @@ function drawPrism(svg, footprint, height, cls, points) {
   return g;
 }
 
-// 테이블·의자를 뒤(화면 위쪽, x + z 작은 것)부터 그린다 → 앞의 것이 뒤의 것을 덮음
-//   같은 깊이면 낮은 것(의자)을 먼저 그린다.
+// ---------- 가림 순서 ----------
+// 바닥 모양을 감싸는 사각형 범위
+function boundsOf(footprint) {
+  const xs = footprint.map((p) => p[0]);
+  const zs = footprint.map((p) => p[1]);
+  return { minX: Math.min(...xs), maxX: Math.max(...xs), minZ: Math.min(...zs), maxZ: Math.max(...zs) };
+}
+
+// 화면에 그려질 범위 (겹치는지 판단용)
+function screenBoundsOf(footprint, height) {
+  const pts = footprint.flatMap(([x, z]) => [toScreen(x, z, 0), toScreen(x, z, height)]);
+  const xs = pts.map((p) => p.sx);
+  const ys = pts.map((p) => p.sy);
+  return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
+}
+
+function screenOverlaps(a, b) {
+  return a.minX < b.maxX && b.minX < a.maxX && a.minY < b.maxY && b.minY < a.maxY;
+}
+
+// a 가 b 보다 확실히 뒤(화면 위쪽)에 있으면 true.
+//   시점은 x·z 가 큰 쪽(앞)에서 내려다보므로,
+//   a 가 x 방향으로 b 보다 완전히 작거나, z 방향으로 완전히 작으면 a 가 뒤다.
+//   (중심점만 비교하면 긴 테이블 옆의 작은 테이블에서 순서가 뒤집힐 수 있다)
+function isBehind(a, b) {
+  return a.bounds.maxX <= b.bounds.minX + 1e-9 || a.bounds.maxZ <= b.bounds.minZ + 1e-9;
+}
+
+// 화면에서 겹치는 가구끼리만 "뒤 → 앞" 관계를 만들고 그 순서대로 정렬한다 (위상 정렬).
+//   관계를 정할 수 없는 경우(바닥 범위가 서로 겹침)와 남은 동률은 중심 깊이(x + z)로 정한다.
+function sortByDepth(items) {
+  const n = items.length;
+  const after = items.map(() => []);   // after[i] = i 보다 나중에 그려야 하는 것들
+  const inDegree = new Array(n).fill(0);
+
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const a = items[i];
+      const b = items[j];
+      if (!screenOverlaps(a.screen, b.screen)) continue;   // 안 겹치면 순서 상관없음
+
+      let behind;   // 먼저 그릴 쪽
+      if (isBehind(a, b)) behind = i;
+      else if (isBehind(b, a)) behind = j;
+      else behind = (a.depth - b.depth || a.height - b.height) <= 0 ? i : j;
+
+      const front = behind === i ? j : i;
+      after[behind].push(front);
+      inDegree[front]++;
+    }
+  }
+
+  // 먼저 그릴 수 있는 것 중 중심 깊이가 작은 것부터 꺼낸다
+  const byDepth = (x, y) => items[x].depth - items[y].depth || items[x].height - items[y].height;
+  const ready = [];
+  for (let i = 0; i < n; i++) if (inDegree[i] === 0) ready.push(i);
+  const order = [];
+  const done = new Array(n).fill(false);
+
+  while (order.length < n) {
+    if (ready.length === 0) {
+      // 순환이 생긴 드문 경우: 남은 것 중 가장 뒤의 것을 강제로 꺼낸다
+      const rest = [...Array(n).keys()].filter((i) => !done[i]).sort(byDepth);
+      ready.push(rest[0]);
+    }
+    ready.sort(byDepth);
+    const i = ready.shift();
+    if (done[i]) continue;
+    done[i] = true;
+    order.push(items[i]);
+    for (const k of after[i]) {
+      if (--inDegree[k] === 0 && !done[k]) ready.push(k);
+    }
+  }
+  return order;
+}
+
+// 테이블·의자를 뒤(화면 위쪽)부터 그린다 → 앞의 것이 뒤의 것을 덮음
 function drawFurniture(svg, floor, points) {
   const items = [
-    ...(floor.chairs ?? []).map((c) => ({ kind: "chair", item: c, depth: c.x + c.z, height: CHAIR_HEIGHT })),
-    ...(floor.tables ?? []).map((t) => ({ kind: "table", item: t, depth: t.x + t.z, height: TABLE_HEIGHT })),
-  ];
-  items.sort((a, b) => a.depth - b.depth || a.height - b.height);
+    ...(floor.chairs ?? []).map((c) => ({ kind: "chair", item: c, footprint: chairFootprint(c), height: CHAIR_HEIGHT })),
+    ...(floor.tables ?? []).map((t) => ({ kind: "table", item: t, footprint: tableFootprint(t), height: TABLE_HEIGHT })),
+  ].map((it) => ({
+    ...it,
+    depth: it.item.x + it.item.z,
+    bounds: boundsOf(it.footprint),
+    screen: screenBoundsOf(it.footprint, it.height),
+  }));
 
-  for (const { kind, item, height } of items) {
+  for (const { kind, item, footprint, height } of sortByDepth(items)) {
     if (kind === "chair") {
-      drawPrism(svg, chairFootprint(item), height, "chair", points);
+      drawPrism(svg, footprint, height, "chair", points);
     } else {
-      const g = drawPrism(svg, tableFootprint(item), height, "table", points);
+      const g = drawPrism(svg, footprint, height, "table", points);
       g.dataset.tableId = item.id;   // #7 상태 색, 탭 처리에서 사용
       if (DEBUG) {
         const p = toScreen(item.x, item.z, height);
