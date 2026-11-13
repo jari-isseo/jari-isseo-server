@@ -1,10 +1,11 @@
 // =====================================================
-//  자리있어 웹 렌더러
+//  자리있어?! 웹 렌더러
 //  #4: 투영 함수 + SVG 뼈대
 //  #5: 바닥면 + 벽 (뒤쪽 벽만 높게, 앞쪽은 테두리선)
 //  #6: 테이블·의자 도형 + 가림 순서
 //  #7: 상태 색·테이블 이름·빈자리 요약·정보 오래됨 표시
 //  #8: 테이블 탭 판정 + 화면 크기 자동 맞춤
+//  #9: mode 분기(손님·사장님·출력) + 앱 브리지 (bridge.js, export.js)
 // =====================================================
 
 // ---------- 설정 ----------
@@ -22,6 +23,8 @@ const ROUND_SEGMENTS = 24;   // 원형 테이블을 몇 각형으로 근사할�
 const SVG_NS = "http://www.w3.org/2000/svg";
 const PARAMS = new URLSearchParams(location.search);
 const DEBUG = PARAMS.get("debug") === "1";
+// 모드 (API 정의서 6장): 없음 = 손님(조회 전용) / owner = 사장님 앱 WebView / export = PNG 출력
+const MODE = ["owner", "export"].includes(PARAMS.get("mode")) ? PARAMS.get("mode") : "customer";
 const STALE_MINUTES = 30;   // 마지막 상태 변경 후 이 시간이 지나면 '정보 오래됨' (AC-05)
 const MIN_TOUCH_RADIUS_PX = 22; // 작은 테이블도 반지름 22px(지름 44px) 안을 누르면 탭으로 인정 (NFR-04)
 
@@ -345,7 +348,8 @@ function sortByDepth(items) {
 // 테이블·의자를 뒤(화면 위쪽)부터 그린다 → 앞의 것이 뒤의 것을 덮음
 //   occupied: tableId → true(손님 있음) / false(빈자리). 상태를 모르면 Map 에 없음 → 회색
 //   반환값: 탭 판정용 테이블 목록 (그린 순서 = 뒤 → 앞)
-function drawFurniture(svg, floor, points, occupied) {
+//   pending: 앱 응답을 기다리는 tableId 모음 (사장님 모드, #9) → 흐리게
+function drawFurniture(svg, floor, points, occupied, pending) {
   const hitTargets = [];
   const items = [
     ...(floor.chairs ?? []).map((c) => ({ kind: "chair", item: c, footprint: chairFootprint(c), height: CHAIR_HEIGHT })),
@@ -362,11 +366,12 @@ function drawFurniture(svg, floor, points, occupied) {
       drawPrism(svg, footprint, height, "chair", points);
     } else {
       const state = occupied.has(item.id) ? (occupied.get(item.id) ? "busy" : "free") : "";
-      const { g, polygons } = drawPrism(svg, footprint, height, `table ${state}`.trim(), points);
+      const pend = pending.has(item.id) ? "pending" : "";
+      const { g, polygons } = drawPrism(svg, footprint, height, `table ${state} ${pend}`.replace(/\s+/g, " ").trim(), points);
       g.dataset.tableId = item.id;   // 탭 처리·실시간 갱신(4-3)에서 테이블을 찾을 때 사용
 
       // 키보드·스크린리더로도 고를 수 있게 (Tab 으로 이동, Enter/Space 로 선택)
-      const stateText = state === "free" ? "빈자리" : state === "busy" ? "사용 중" : "상태 모름";
+      const stateText = pend ? "변경 중" : state === "free" ? "빈자리" : state === "busy" ? "사용 중" : "상태 모름";
       g.setAttribute("tabindex", "0");
       g.setAttribute("role", "button");
       g.setAttribute("aria-label", `${item.name} 테이블, ${stateText}`);
@@ -514,13 +519,13 @@ function fitViewBox(svg, points) {
 }
 
 // 그리는 순서 = 겹치는 순서: 바닥 → 벽 → 가구(테이블·의자)
-function draw(svg, floor, occupied = new Map()) {
+function draw(svg, floor, occupied = new Map(), pending = new Set()) {
   svg.innerHTML = "";
   const points = [];   // viewBox 계산용 (화면 좌표 모음)
 
   drawFloor(svg, floor, points);
   drawWalls(svg, floor, points);
-  const hitTargets = drawFurniture(svg, floor, points, occupied);
+  const hitTargets = drawFurniture(svg, floor, points, occupied, pending);
   if (DEBUG) drawAxes(svg, points);
 
   // viewBox + preserveAspectRatio(meet) → 화면 크기·방향과 상관없이 매장 전체가 보이고 가운데 정렬됨.
@@ -625,8 +630,29 @@ function renderSummary(layout, snapshot, occupied) {
   startFreshnessUpdates(baseMeta, lastUpdatedAt, store.open);
 }
 
+// ---------- 화면 상태 (#9) ----------
+// applyStatus 등으로 상태가 바뀌면 이 값을 고치고 refresh() 로 다시 그린다
+const viewer = { layout: null, snapshot: null, floor: null, occupied: new Map() };
+
+function refresh() {
+  renderSummary(viewer.layout, viewer.snapshot, viewer.occupied);
+  draw(document.getElementById("stage"), viewer.floor, viewer.occupied, pendingTables);
+}
+
+// 그릴 층 고르기: ?floor={floorId} 가 있으면 그 층, 없거나 못 찾으면 order 0 층.
+//   출력 모드의 ?floor=all 이면 모든 층.
+//   (층 드롭다운·사장님 모드의 마지막 본 층은 #32에서)
+function pickFloors(floors) {
+  const wanted = PARAMS.get("floor");
+  if (wanted === "all" && MODE === "export") return floors;
+  const found = floors.find((f) => f.id === wanted);
+  if (wanted && !found) console.warn(`floor=${wanted} 층이 없어서 첫 층을 보여줘요`);
+  return [found ?? floors[0]];
+}
+
 // ---------- 시작 ----------
 async function main() {
+  document.body.classList.add(`mode-${MODE}`);
   if (DEBUG) {
     console.table({
       "(0,0)": toScreen(0, 0),
@@ -638,18 +664,30 @@ async function main() {
   try {
     const { name, layout, snapshot } = await loadSample();
     const floors = [...layout.floors].sort((a, b) => a.order - b.order);
-    const floor = floors[0];   // 지금은 order 0 층만. 층 선택은 #32에서
+    const picked = pickFloors(floors);
 
+    viewer.layout = layout;
+    viewer.snapshot = snapshot;
+    viewer.floor = picked[0];
     // tableId → 손님 있음 여부
-    const occupied = new Map((snapshot?.statuses ?? []).map((s) => [s.tableId, s.occupied]));
+    viewer.occupied = new Map((snapshot?.statuses ?? []).map((s) => [s.tableId, s.occupied]));
 
-    renderSummary(layout, snapshot, occupied);
-    document.getElementById("floorName").textContent = floor.name;
+    document.getElementById("floorName").textContent = viewer.floor.name;
     document.getElementById("info").textContent =
-      `sample=${name} · 테이블 ${floor.tables?.length ?? 0}개 · 의자 ${floor.chairs?.length ?? 0}개 · 전체 ${floors.length}개 층` +
-      (floor.walls?.length ? "" : " · walls 없음 → 바닥 경계로 대체");
+      `mode=${MODE} · sample=${name} · 테이블 ${viewer.floor.tables?.length ?? 0}개 · 의자 ${viewer.floor.chairs?.length ?? 0}개 · 전체 ${floors.length}개 층` +
+      (viewer.floor.walls?.length ? "" : " · walls 없음 → 바닥 경계로 대체");
 
-    draw(document.getElementById("stage"), floor, occupied);
+    if (MODE === "export") {
+      // 출력: 상태 색 없이 그려서 PNG 로 (요약·상태는 쓰지 않음)
+      draw(document.getElementById("stage"), viewer.floor);
+      callBridge("onReady");
+      await runExport(picked);
+      return;
+    }
+
+    if (MODE === "owner") setupOwnerMode();
+    refresh();
+    callBridge("onReady");
   } catch (e) {
     document.getElementById("headline").textContent = "불러오기 실패";
     document.getElementById("meta").textContent = e.message;
