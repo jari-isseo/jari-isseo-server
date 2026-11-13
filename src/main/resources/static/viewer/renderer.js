@@ -425,11 +425,32 @@ function isStale(iso) {
   return (nowTime() - Date.parse(iso)) / 60000 > STALE_MINUTES;
 }
 
-// 매장 전체(모든 층) 빈 테이블 수 / 전체 테이블 수 (FR-U05)
-function countFree(layout, occupied) {
+// 매장 전체(모든 층) 테이블 수 세기 (FR-U05)
+//   free: 상태가 '빈자리'로 확인된 수, unknown: 상태 정보가 없는 수
+function countTables(layout, occupied) {
   const ids = layout.floors.flatMap((f) => (f.tables ?? []).map((t) => t.id));
   const free = ids.filter((id) => occupied.get(id) === false).length;
-  return { free, total: ids.length };
+  const unknown = ids.filter((id) => !occupied.has(id)).length;
+  return { free, unknown, total: ids.length };
+}
+
+// 시간이 흐르면 바뀌는 부분: "N분 전 업데이트", '정보 오래됨'
+//   페이지를 열어둔 채 시간이 지나도 맞도록 주기적으로 다시 계산한다.
+let freshnessTimer = null;
+
+function startFreshnessUpdates(baseMeta, lastUpdatedAt, open) {
+  const update = () => {
+    const $ = (id) => document.getElementById(id);
+    $("meta").textContent = baseMeta + (lastUpdatedAt ? ` · ${timeAgo(lastUpdatedAt)} 업데이트` : "");
+    // 영업 종료면 오래됨 경고는 의미가 없으므로 숨긴다.
+    // 상태가 한 번도 바뀌지 않았으면 lastUpdatedAt 이 없을 수 있음 → 오래됨으로 보지 않는다.
+    $("stale").hidden = !(open && lastUpdatedAt && isStale(lastUpdatedAt));
+  };
+
+  update();
+  if (freshnessTimer) clearInterval(freshnessTimer);
+  // ?now= 로 시각을 고정한 경우에는 바뀔 일이 없으므로 타이머를 돌리지 않는다
+  if (!PARAMS.get("now")) freshnessTimer = setInterval(update, 30 * 1000);
 }
 
 function renderSummary(layout, snapshot, occupied) {
@@ -445,30 +466,36 @@ function renderSummary(layout, snapshot, occupied) {
   }
 
   const { store, lastUpdatedAt } = snapshot;
-  const { free, total } = countFree(layout, occupied);
+  const { free, unknown, total } = countTables(layout, occupied);
 
+  // 매장 이름 · 영업 여부
   $("store").innerHTML = "";
   $("store").append(store.name, " · ");
-  const open = document.createElement("span");
-  open.textContent = store.open ? "영업 중" : "영업 종료";
-  if (!store.open) open.className = "closed";
-  $("store").append(open);
+  const openLabel = document.createElement("span");
+  openLabel.textContent = store.open ? "영업 중" : "영업 종료";
+  if (!store.open) openLabel.className = "closed";
+  $("store").append(openLabel);
 
+  // 큰 문구: 영업 종료 > 상태 모름 > 빈자리 있음 > 빈자리 없음 순으로 판단
   $("headline").innerHTML = "";
-  if (free > 0) {
+  if (!store.open) {
+    $("headline").textContent = "지금은 영업하지 않아요";
+  } else if (total > 0 && unknown === total) {
+    $("headline").textContent = "아직 빈자리 정보가 없어요";
+  } else if (free > 0) {
     const count = document.createElement("span");
     count.className = "count";
     count.textContent = `${free}개`;
     $("headline").append("지금 빈자리 ", count, " 있어요");
+  } else if (unknown > 0) {
+    // 확인된 빈자리는 없지만 상태를 모르는 테이블이 있음 → '없다'고 단정하지 않는다
+    $("headline").textContent = "확인된 빈자리가 없어요";
   } else {
     $("headline").textContent = "지금은 빈자리가 없어요";
   }
 
-  $("meta").textContent = `빈 테이블 ${free} / 전체 ${total}` +
-    (lastUpdatedAt ? ` · ${timeAgo(lastUpdatedAt)} 업데이트` : "");
-
-  // 상태가 한 번도 바뀌지 않았으면 lastUpdatedAt 이 없을 수 있음 → 오래됨으로 보지 않는다
-  $("stale").hidden = !(lastUpdatedAt && isStale(lastUpdatedAt));
+  const baseMeta = `빈 테이블 ${free} / 전체 ${total}` + (unknown > 0 ? ` · 상태 미확인 ${unknown}` : "");
+  startFreshnessUpdates(baseMeta, lastUpdatedAt, store.open);
 }
 
 // ---------- 시작 ----------
