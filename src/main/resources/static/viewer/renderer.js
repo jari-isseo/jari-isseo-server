@@ -12,7 +12,7 @@ const SCALE = 60;        // 1m = 60px (가로 기준). 2:1 이라 바닥 세로�
 const HEIGHT_SCALE = 60; // 높이 1m = 화면 위로 60px
 const WALL_HEIGHT = 0.8;     // 낮은 벽 높이 (m) — 안쪽이 보이도록 낮게
 const WALL_THICKNESS = 0.12; // 벽 두께 (m) — 윗면이 살짝 보이게
-const PADDING = 40;      // 그림 바깥 여백 (px)
+const PADDING = 12;      // 그림 바깥 여백 (px). 작을수록 매장이 크게 보임 (#8)
 
 // 가구 크기 (m) — 실제 높이보다 낮게 잡아 시안처럼 납작한 상자로 보이게
 const TABLE_HEIGHT = 0.35;
