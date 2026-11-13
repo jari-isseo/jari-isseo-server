@@ -8,12 +8,24 @@
 </head>
 <body>
   <header>
-    <h1 id="title">불러오는 중…</h1>
-    <p id="info"></p>
+    <p id="store" class="store"></p>
+    <h1 id="headline">불러오는 중…</h1>
+    <p id="meta" class="meta"></p>
+    <p id="stale" class="stale" hidden>⚠️ 정보가 오래되었을 수 있어요</p>
   </header>
 
-  <!-- 아이소메트릭 뷰가 그려질 곳 -->
-  <svg id="stage" xmlns="http://www.w3.org/2000/svg"></svg>
+  <section class="map">
+    <p id="floorName" class="floor-name"></p>
+    <!-- 아이소메트릭 뷰가 그려질 곳 -->
+    <svg id="stage" xmlns="http://www.w3.org/2000/svg"></svg>
+    <p class="legend">
+      <span><i class="dot free"></i>빈자리</span>
+      <span><i class="dot busy"></i>사용 중</span>
+    </p>
+  </section>
+
+  <!-- 개발용 정보 (샘플 이름, 개수) -->
+  <p id="info" class="info"></p>
 
   <script src="renderer.js"></script>
 </body>

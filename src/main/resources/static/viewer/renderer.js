@@ -3,6 +3,7 @@
 //  #4: 투영 함수 + SVG 뼈대
 //  #5: 바닥면 + 벽 (뒤쪽 벽만 높게, 앞쪽은 테두리선)
 //  #6: 테이블·의자 도형 + 가림 순서
+//  #7: 상태 색·테이블 이름·빈자리 요약·정보 오래됨 표시
 // =====================================================
 
 // ---------- 설정 ----------
@@ -18,7 +19,9 @@ const CHAIR_HEIGHT = 0.22;
 const CHAIR_SIZE = 0.4;
 const ROUND_SEGMENTS = 24;   // 원형 테이블을 몇 각형으로 근사할지
 const SVG_NS = "http://www.w3.org/2000/svg";
-const DEBUG = new URLSearchParams(location.search).get("debug") === "1";
+const PARAMS = new URLSearchParams(location.search);
+const DEBUG = PARAMS.get("debug") === "1";
+const STALE_MINUTES = 30;   // 마지막 상태 변경 후 이 시간이 지나면 '정보 오래됨' (AC-05)
 
 // ---------- 투영 함수 ----------
 // 바닥 좌표 (x, z) [m] + 높이 h [m] → 화면 좌표 { sx, sy } [px]
@@ -49,8 +52,11 @@ async function loadSample() {
   if (!res.ok) throw new Error(`${file} 을 못 읽었어요 (HTTP ${res.status})`);
   const data = await res.json();
 
-  // 스냅샷은 { store, layout, statuses, ... } 이고 배치는 layout 안에 있다
-  return { name, layout: name === "snapshot" ? data.layout : data };
+  // 스냅샷은 { store, layout, statuses, lastUpdatedAt } 이고 배치는 layout 안에 있다.
+  // 배치 파일만 열면 상태 정보가 없다 (snapshot: null)
+  return name === "snapshot"
+    ? { name, layout: data.layout, snapshot: data }
+    : { name, layout: data, snapshot: null };
 }
 
 // ---------- SVG 도우미 ----------
@@ -332,7 +338,8 @@ function sortByDepth(items) {
 }
 
 // 테이블·의자를 뒤(화면 위쪽)부터 그린다 → 앞의 것이 뒤의 것을 덮음
-function drawFurniture(svg, floor, points) {
+//   occupied: tableId → true(손님 있음) / false(빈자리). 상태를 모르면 Map 에 없음 → 회색
+function drawFurniture(svg, floor, points, occupied) {
   const items = [
     ...(floor.chairs ?? []).map((c) => ({ kind: "chair", item: c, footprint: chairFootprint(c), height: CHAIR_HEIGHT })),
     ...(floor.tables ?? []).map((t) => ({ kind: "table", item: t, footprint: tableFootprint(t), height: TABLE_HEIGHT })),
@@ -347,12 +354,13 @@ function drawFurniture(svg, floor, points) {
     if (kind === "chair") {
       drawPrism(svg, footprint, height, "chair", points);
     } else {
-      const g = drawPrism(svg, footprint, height, "table", points);
-      g.dataset.tableId = item.id;   // #7 상태 색, 탭 처리에서 사용
-      if (DEBUG) {
-        const p = toScreen(item.x, item.z, height);
-        addText(svg, p.sx, p.sy + 4, item.name, "table-label", { "text-anchor": "middle" });
-      }
+      const state = occupied.has(item.id) ? (occupied.get(item.id) ? "busy" : "free") : "";
+      const g = drawPrism(svg, footprint, height, `table ${state}`.trim(), points);
+      g.dataset.tableId = item.id;   // 탭 처리(2-5)·실시간 갱신(4-3)에서 테이블을 찾을 때 사용
+
+      // 테이블 이름: 윗면 가운데
+      const p = toScreen(item.x, item.z, height);
+      addText(svg, p.sx, p.sy, item.name, `table-label ${state}`.trim());
     }
   }
 }
@@ -384,16 +392,110 @@ function fitViewBox(svg, points) {
 }
 
 // 그리는 순서 = 겹치는 순서: 바닥 → 벽 → 가구(테이블·의자)
-function draw(svg, floor) {
+function draw(svg, floor, occupied = new Map()) {
   svg.innerHTML = "";
   const points = [];   // viewBox 계산용 (화면 좌표 모음)
 
   drawFloor(svg, floor, points);
   drawWalls(svg, floor, points);
-  drawFurniture(svg, floor, points);
+  drawFurniture(svg, floor, points, occupied);
   if (DEBUG) drawAxes(svg, points);
 
   fitViewBox(svg, points);
+}
+
+// ---------- 상단 요약 (#7) ----------
+// 지금 시각. 개발용으로 ?now=2026-11-12T11:32:00Z 처럼 고정할 수 있다 (정보 오래됨 확인용)
+function nowTime() {
+  const fixed = PARAMS.get("now");
+  const t = fixed ? Date.parse(fixed) : Date.now();
+  return Number.isNaN(t) ? Date.now() : t;
+}
+
+// "방금 / N분 전 / N시간 전 / N일 전"
+function timeAgo(iso) {
+  const minutes = Math.floor((nowTime() - Date.parse(iso)) / 60000);
+  if (minutes < 1) return "방금";
+  if (minutes < 60) return `${minutes}분 전`;
+  if (minutes < 60 * 24) return `${Math.floor(minutes / 60)}시간 전`;
+  return `${Math.floor(minutes / (60 * 24))}일 전`;
+}
+
+function isStale(iso) {
+  return (nowTime() - Date.parse(iso)) / 60000 > STALE_MINUTES;
+}
+
+// 매장 전체(모든 층) 테이블 수 세기 (FR-U05)
+//   free: 상태가 '빈자리'로 확인된 수, unknown: 상태 정보가 없는 수
+function countTables(layout, occupied) {
+  const ids = layout.floors.flatMap((f) => (f.tables ?? []).map((t) => t.id));
+  const free = ids.filter((id) => occupied.get(id) === false).length;
+  const unknown = ids.filter((id) => !occupied.has(id)).length;
+  return { free, unknown, total: ids.length };
+}
+
+// 시간이 흐르면 바뀌는 부분: "N분 전 업데이트", '정보 오래됨'
+//   페이지를 열어둔 채 시간이 지나도 맞도록 주기적으로 다시 계산한다.
+let freshnessTimer = null;
+
+function startFreshnessUpdates(baseMeta, lastUpdatedAt, open) {
+  const update = () => {
+    const $ = (id) => document.getElementById(id);
+    $("meta").textContent = baseMeta + (lastUpdatedAt ? ` · ${timeAgo(lastUpdatedAt)} 업데이트` : "");
+    // 영업 종료면 오래됨 경고는 의미가 없으므로 숨긴다.
+    // 상태가 한 번도 바뀌지 않았으면 lastUpdatedAt 이 없을 수 있음 → 오래됨으로 보지 않는다.
+    $("stale").hidden = !(open && lastUpdatedAt && isStale(lastUpdatedAt));
+  };
+
+  update();
+  if (freshnessTimer) clearInterval(freshnessTimer);
+  // ?now= 로 시각을 고정한 경우에는 바뀔 일이 없으므로 타이머를 돌리지 않는다
+  if (!PARAMS.get("now")) freshnessTimer = setInterval(update, 30 * 1000);
+}
+
+function renderSummary(layout, snapshot, occupied) {
+  const $ = (id) => document.getElementById(id);
+
+  if (!snapshot) {
+    // 배치 파일만 열었을 때: 상태를 모르므로 요약 대신 안내
+    $("store").textContent = "";
+    $("headline").textContent = "배치 미리보기";
+    $("meta").textContent = "상태 정보가 없어서 테이블이 회색으로 보여요 (?sample=snapshot 으로 확인)";
+    $("stale").hidden = true;
+    return;
+  }
+
+  const { store, lastUpdatedAt } = snapshot;
+  const { free, unknown, total } = countTables(layout, occupied);
+
+  // 매장 이름 · 영업 여부
+  $("store").innerHTML = "";
+  $("store").append(store.name, " · ");
+  const openLabel = document.createElement("span");
+  openLabel.textContent = store.open ? "영업 중" : "영업 종료";
+  if (!store.open) openLabel.className = "closed";
+  $("store").append(openLabel);
+
+  // 큰 문구: 영업 종료 > 상태 모름 > 빈자리 있음 > 빈자리 없음 순으로 판단
+  $("headline").innerHTML = "";
+  if (!store.open) {
+    $("headline").textContent = "지금은 영업하지 않아요";
+  } else if (total > 0 && unknown === total) {
+    $("headline").textContent = "아직 빈자리 정보가 없어요";
+  } else if (free > 0) {
+    const count = document.createElement("span");
+    count.className = "count";
+    count.textContent = `${free}개`;
+    $("headline").append("지금 빈자리 ", count, " 있어요");
+  } else if (unknown > 0) {
+    // 확인된 빈자리는 없지만 상태를 모르는 테이블이 있음 → '없다'고 단정하지 않는다
+    $("headline").textContent = "확인된 빈자리가 없어요";
+  } else {
+    $("headline").textContent = "지금은 빈자리가 없어요";
+  }
+
+  const baseMeta = `빈 테이블 ${free} / 전체 ${total}` + (unknown > 0 ? ` · 상태 미확인 ${unknown}` : "");
+  startFreshnessUpdates(baseMeta, lastUpdatedAt, store.open);
 }
 
 // ---------- 시작 ----------
@@ -407,19 +509,23 @@ async function main() {
   }
 
   try {
-    const { name, layout } = await loadSample();
+    const { name, layout, snapshot } = await loadSample();
     const floors = [...layout.floors].sort((a, b) => a.order - b.order);
-    const floor = floors[0];   // 지금은 order 0 층만. 층 선택은 이후 이슈에서
+    const floor = floors[0];   // 지금은 order 0 층만. 층 선택은 #32에서
 
-    document.getElementById("title").textContent = floor.name;
+    // tableId → 손님 있음 여부
+    const occupied = new Map((snapshot?.statuses ?? []).map((s) => [s.tableId, s.occupied]));
+
+    renderSummary(layout, snapshot, occupied);
+    document.getElementById("floorName").textContent = floor.name;
     document.getElementById("info").textContent =
       `sample=${name} · 테이블 ${floor.tables?.length ?? 0}개 · 의자 ${floor.chairs?.length ?? 0}개 · 전체 ${floors.length}개 층` +
       (floor.walls?.length ? "" : " · walls 없음 → 바닥 경계로 대체");
 
-    draw(document.getElementById("stage"), floor);
+    draw(document.getElementById("stage"), floor, occupied);
   } catch (e) {
-    document.getElementById("title").textContent = "불러오기 실패";
-    document.getElementById("info").textContent = e.message;
+    document.getElementById("headline").textContent = "불러오기 실패";
+    document.getElementById("meta").textContent = e.message;
     console.error(e);
   }
 }
