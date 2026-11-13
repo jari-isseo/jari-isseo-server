@@ -26,6 +26,8 @@ h1 .count { color: #2e9e5b; }
 #stage {
   display: block;
   width: 100%;
+  touch-action: manipulation;   /* 두 번 탭 확대 막고 탭 즉시 처리 (핀치 줌은 허용) (#8) */
+  -webkit-tap-highlight-color: transparent;
   height: auto;          /* viewBox 비율대로 높이 자동 → 모바일에서 위아래 빈 공간 없음 */
   max-height: 70vh;
   background: #fff;
@@ -64,10 +66,24 @@ h1 .count { color: #2e9e5b; }
 .table.busy .side-z { fill: #1c1e22; stroke: #1c1e22; }
 
 /* 테이블 이름 라벨 (#7) */
-.table-label { font-size: 15px; font-weight: 800; fill: #444; text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
+.table-label { font-size: 20px; font-weight: 800; fill: #444; text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
 .table-label.free { fill: #1f7a3c; }
 .table-label.busy { fill: #ffffff; }
+
+/* 탭 판정 확인용 (?debug=1) (#8) */
+.table { cursor: pointer; }
+.table.tapped .top { stroke: #1f6feb; stroke-width: 3; }
 
 /* 개발용 기준점 (?debug=1 일 때만) */
 .axis-dot { stroke: #fff; stroke-width: 1.5; }
 .axis-label { font-size: 11px; font-weight: 700; }
+
+/* 좁은 화면(폰)에서는 지도 카드를 좌우 끝까지 → 매장이 조금 더 크게 보임 (#8) */
+@media (max-width: 600px) {
+  .map { padding: 0 4px; }
+  .floor-name, .legend { margin-left: 14px; }
+}
+
+/* 키보드로 테이블에 포커스했을 때 (#8) */
+.table:focus { outline: none; }
+.table:focus-visible .top { stroke: #1f6feb; stroke-width: 3; }
