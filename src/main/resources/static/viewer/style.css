@@ -18,10 +18,21 @@ h1 { margin: 0 0 4px; font-size: 20px; }
   background: #fff;
 }
 
-/* 테이블 중심점 */
+/* 바닥 (#5) */
+.floor { fill: #ece6dc; stroke: #b5ab9c; stroke-width: 1.5; stroke-linejoin: round; }
+
+/* 뒤쪽 벽: 높이 있는 면 (#5) */
+.wall-face { stroke: #a99f90; stroke-width: 1; stroke-linejoin: round; }
+.wall-face.along-x { fill: #d9d0c2; }   /* x 방향으로 뻗은 벽 */
+.wall-face.along-z { fill: #cdc3b3; }   /* z 방향으로 뻗은 벽 (조금 어둡게) */
+
+/* 앞쪽 벽·변: 테두리선만 (#5) */
+.wall-front { stroke: #8f8474; stroke-width: 3; stroke-linecap: round; }
+
+/* 테이블 중심점 (#6에서 도형으로 바뀜) */
 .table-dot { fill: #2e9e5b; }
 .table-label { font-size: 12px; fill: #333; }
 
-/* 좌표 확인용 기준점: (0,0) (1,0) (0,1) */
+/* 개발용 기준점 (?debug=1 일 때만) */
 .axis-dot { stroke: #fff; stroke-width: 1.5; }
 .axis-label { font-size: 11px; font-weight: 700; }
