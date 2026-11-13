@@ -87,3 +87,12 @@ h1 .count { color: #2e9e5b; }
 /* 키보드로 테이블에 포커스했을 때 (#8) */
 .table:focus { outline: none; }
 .table:focus-visible .top { stroke: #1f6feb; stroke-width: 3; }
+
+/* 사장님 모드: 앱 응답(applyStatus/revertStatus) 기다리는 테이블 (#9) */
+.table.pending { opacity: 0.45; }
+
+/* 출력 모드: 요약·범례 대신 앱에 보낸 PNG 만 보여줌 (#9) */
+.mode-export header,
+.mode-export .map { display: none; }
+.export-preview { display: block; width: calc(100% - 24px); margin: 12px; border: 1px solid #ddd; border-radius: 12px; background: #fff; }
+.export-preview[hidden] { display: none; }
