@@ -24,9 +24,15 @@
     </p>
   </section>
 
-  <!-- 개발용 정보 (샘플 이름, 개수) -->
+  <!-- 출력 모드(?mode=export)에서 앱에 보낸 PNG 미리보기 -->
+  <img id="exportPreview" class="export-preview" alt="출력 이미지" hidden>
+
+  <!-- 개발용 정보 (모드, 샘플 이름, 개수) -->
   <p id="info" class="info"></p>
 
+  <!-- bridge.js·export.js 는 함수만 정의, 실행은 renderer.js 의 main() -->
+  <script src="bridge.js"></script>
+  <script src="export.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>
