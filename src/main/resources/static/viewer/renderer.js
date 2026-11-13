@@ -81,15 +81,27 @@ function isInside(polygon, x, z) {
 
 // 벽 선분의 "바닥 안쪽" 방향 단위벡터
 //   벽 가운데에서 양쪽으로 살짝 나가 보고, 바닥 안에 있는 쪽을 안쪽으로 본다.
+//   양쪽 다 안쪽(칸막이 벽)이거나 양쪽 다 바깥이면 안쪽을 정할 수 없으므로,
+//   from/to 순서와 상관없이 항상 화면 앞쪽(x + z 가 커지는 쪽)을 향하는 방향을 쓴다.
+//   → 칸막이 벽은 끝점 순서가 바뀌어도 늘 같은 모양(세운 벽)으로 그려진다.
 function inwardNormal(polygon, from, to) {
   const dx = to[0] - from[0];
   const dz = to[1] - from[1];
   const len = Math.hypot(dx, dz) || 1;
   const n = { x: -dz / len, z: dx / len };   // 선분에 수직인 한쪽 방향
+  const flipped = { x: -n.x, z: -n.z };
   const mx = (from[0] + to[0]) / 2;
   const mz = (from[1] + to[1]) / 2;
   const EPS = 0.05;
-  return isInside(polygon, mx + n.x * EPS, mz + n.z * EPS) ? n : { x: -n.x, z: -n.z };
+
+  const sideA = isInside(polygon, mx + n.x * EPS, mz + n.z * EPS);
+  const sideB = isInside(polygon, mx - n.x * EPS, mz - n.z * EPS);
+  if (sideA !== sideB) return sideA ? n : flipped;   // 바깥 벽: 안쪽이 분명함
+
+  // 칸막이(양쪽 안쪽) 또는 바닥 밖의 벽: 화면 앞쪽을 향하는 쪽으로 고정
+  const towardViewer = n.x + n.z;
+  if (Math.abs(towardViewer) > 1e-9) return towardViewer > 0 ? n : flipped;
+  return n.x > 0 ? n : flipped;   // 시선과 정확히 나란한 벽: 그래도 순서와 무관하게 하나로
 }
 
 // 화면 앞쪽은 x + z 가 커지는 방향.
@@ -229,7 +241,7 @@ async function main() {
     document.getElementById("title").textContent = floor.name;
     document.getElementById("info").textContent =
       `sample=${name} · 테이블 ${floor.tables.length}개 · 전체 ${floors.length}개 층` +
-      (floor.walls.length ? "" : " · walls 없음 → 바닥 경계로 대체");
+      (floor.walls?.length ? "" : " · walls 없음 → 바닥 경계로 대체");
 
     draw(document.getElementById("stage"), floor);
   } catch (e) {
