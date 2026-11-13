@@ -3,7 +3,7 @@
 body {
   margin: 0;
   font-family: -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
-  background: #faf8f5;
+  background: #f7f5f0;
   color: #222;
 }
 
@@ -18,10 +18,22 @@ h1 { margin: 0 0 4px; font-size: 20px; }
   background: #fff;
 }
 
-/* 테이블 중심점 */
+/* 바닥 (#5) — 디자인 시안 C 기준: 흰 바닥 + 연회색 테두리 */
+.floor { fill: #ffffff; stroke: #d9d9de; stroke-width: 1.2; stroke-linejoin: round; }
+
+/* 뒤쪽 벽: 연회색 면 + 밝은 윗면(두께) (#5) */
+.wall-face { stroke: #c9c9cf; stroke-width: 1; stroke-linejoin: round; }
+.wall-face.along-x { fill: #ececef; }   /* x 방향 벽 */
+.wall-face.along-z { fill: #e1e1e6; }   /* z 방향 벽 (조금 어둡게) */
+.wall-top { fill: #f6f6f8; stroke: #c9c9cf; stroke-width: 1; stroke-linejoin: round; }
+
+/* 앞쪽 벽·변: 얇은 테두리선만 (#5) */
+.wall-front { stroke: #c9c9cf; stroke-width: 1.5; stroke-linecap: round; }
+
+/* 테이블 중심점 (#6에서 도형으로 바뀜) */
 .table-dot { fill: #2e9e5b; }
 .table-label { font-size: 12px; fill: #333; }
 
-/* 좌표 확인용 기준점: (0,0) (1,0) (0,1) */
+/* 개발용 기준점 (?debug=1 일 때만) */
 .axis-dot { stroke: #fff; stroke-width: 1.5; }
 .axis-label { font-size: 11px; font-weight: 700; }
