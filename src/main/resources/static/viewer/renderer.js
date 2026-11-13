@@ -365,6 +365,12 @@ function drawFurniture(svg, floor, points, occupied) {
       const { g, polygons } = drawPrism(svg, footprint, height, `table ${state}`.trim(), points);
       g.dataset.tableId = item.id;   // 탭 처리·실시간 갱신(4-3)에서 테이블을 찾을 때 사용
 
+      // 키보드·스크린리더로도 고를 수 있게 (Tab 으로 이동, Enter/Space 로 선택)
+      const stateText = state === "free" ? "빈자리" : state === "busy" ? "사용 중" : "상태 모름";
+      g.setAttribute("tabindex", "0");
+      g.setAttribute("role", "button");
+      g.setAttribute("aria-label", `${item.name} 테이블, ${stateText}`);
+
       // 테이블 이름: 윗면 가운데
       const p = toScreen(item.x, item.z, height);
       addText(svg, p.sx, p.sy, item.name, `table-label ${state}`.trim());
@@ -403,10 +409,31 @@ function pxPerUnit(svg) {
   return m ? Math.hypot(m.a, m.b) : 1;
 }
 
+// 점에서 선분(a-b)까지 가장 가까운 거리
+function distToSegment(x, y, a, b) {
+  const dx = b.sx - a.sx;
+  const dy = b.sy - a.sy;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 ? Math.max(0, Math.min(1, ((x - a.sx) * dx + (y - a.sy) * dy) / len2)) : 0;
+  return Math.hypot(x - (a.sx + t * dx), y - (a.sy + t * dy));
+}
+
+// 점에서 테이블 도형(여러 면)의 테두리까지 가장 가까운 거리
+function distToPolygons(polygons, x, y) {
+  let min = Infinity;
+  for (const poly of polygons) {
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      min = Math.min(min, distToSegment(x, y, poly[j], poly[i]));
+    }
+  }
+  return min;
+}
+
 // 눌린 테이블 찾기
 //   1) 테이블 도형(윗면·옆면) 안을 눌렀으면 그 테이블. 겹치면 앞(나중에 그린 것)이 우선.
-//   2) 도형 밖이어도, 테이블 가운데에서 MIN_TOUCH_RADIUS_PX 안이면 가장 가까운 테이블.
+//   2) 도형 밖이어도, 테이블 테두리에서 MIN_TOUCH_RADIUS_PX 안이면 가장 가까운 테이블.
 //      → 화면에서 작게 보이는 테이블도 손가락으로 누르기 쉬움 (NFR-04)
+//      (가운데 기준이 아니라 테두리 기준이라 큰 테이블도 가장자리 바깥 22px 까지 똑같이 잡힘)
 function findTappedTable(svg, hitTargets, clientX, clientY) {
   const p = toSvgPoint(svg, clientX, clientY);
 
@@ -420,7 +447,7 @@ function findTappedTable(svg, hitTargets, clientX, clientY) {
   let best = null;
   let bestDist = Infinity;
   for (const t of hitTargets) {
-    const d = Math.hypot(t.center.sx - p.x, t.center.sy - p.y);
+    const d = distToPolygons(t.polygons, p.x, p.y);
     if (d <= radius && d < bestDist) {
       best = t;
       bestDist = d;
@@ -429,21 +456,34 @@ function findTappedTable(svg, hitTargets, clientX, clientY) {
   return best;
 }
 
-// 탭 이벤트 연결. 탭 이후 동작(상태 전환·앱에 알리기)은 2-6에서 이 이벤트를 받아 처리한다.
+// 테이블 선택 → tabletap 이벤트. 탭·키보드 모두 여기로 모인다.
+function selectTable(hit, hitTargets) {
+  window.dispatchEvent(new CustomEvent("tabletap", {
+    detail: { tableId: hit.id, name: hit.name },
+  }));
+
+  if (DEBUG) {
+    console.log("tabletap", hit.id, hit.name);
+    hitTargets.forEach((t) => t.group.classList.toggle("tapped", t === hit));
+  }
+}
+
+// 탭·키보드 이벤트 연결. 탭 이후 동작(상태 전환·앱에 알리기)은 2-6에서 이 이벤트를 받아 처리한다.
 //   window.addEventListener("tabletap", (e) => e.detail.tableId)
 function enableTableTap(svg, hitTargets) {
   svg.onclick = (e) => {
     const hit = findTappedTable(svg, hitTargets, e.clientX, e.clientY);
+    if (hit) selectTable(hit, hitTargets);
+  };
+
+  // Tab 으로 테이블에 포커스 → Enter 또는 Space 로 선택
+  svg.onkeydown = (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const group = e.target.closest?.(".table");
+    const hit = hitTargets.find((t) => t.group === group);
     if (!hit) return;
-
-    window.dispatchEvent(new CustomEvent("tabletap", {
-      detail: { tableId: hit.id, name: hit.name },
-    }));
-
-    if (DEBUG) {
-      console.log("tabletap", hit.id, hit.name);
-      hitTargets.forEach((t) => t.group.classList.toggle("tapped", t === hit));
-    }
+    e.preventDefault();   // Space 로 페이지가 스크롤되는 것 방지
+    selectTable(hit, hitTargets);
   };
 }
 
