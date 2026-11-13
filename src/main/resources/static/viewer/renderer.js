@@ -1,5 +1,5 @@
 // =====================================================
-//  자리있어?! 웹 렌더러
+//  자리있어 웹 렌더러
 //  #4: 투영 함수 + SVG 뼈대
 //  #5: 바닥면 + 벽 (뒤쪽 벽만 높게, 앞쪽은 테두리선)
 //  #6: 테이블·의자 도형 + 가림 순서
@@ -635,8 +635,18 @@ function renderSummary(layout, snapshot, occupied) {
 const viewer = { layout: null, snapshot: null, floor: null, occupied: new Map() };
 
 function refresh() {
+  const svg = document.getElementById("stage");
+  // 다시 그리면 SVG 안이 통째로 바뀌어 키보드 포커스가 사라진다 → 포커스된 테이블을 기억했다가 되돌림
+  const focusedId = svg.contains(document.activeElement)
+    ? document.activeElement.closest?.(".table")?.dataset.tableId
+    : null;
+
   renderSummary(viewer.layout, viewer.snapshot, viewer.occupied);
-  draw(document.getElementById("stage"), viewer.floor, viewer.occupied, pendingTables);
+  draw(svg, viewer.floor, viewer.occupied, pendingTables);
+
+  if (focusedId) {
+    [...svg.querySelectorAll(".table")].find((g) => g.dataset.tableId === focusedId)?.focus();
+  }
 }
 
 // 그릴 층 고르기: ?floor={floorId} 가 있으면 그 층, 없거나 못 찾으면 order 0 층.
@@ -689,7 +699,9 @@ async function main() {
     refresh();
     callBridge("onReady");
   } catch (e) {
-    document.getElementById("headline").textContent = "불러오기 실패";
+    // 출력 모드는 위쪽 안내 영역을 숨겨두므로, 실패하면 다시 보이게 해서 에러 문구가 나오도록
+    document.body.classList.remove("mode-export");
+    document.getElementById("headline").textContent = MODE === "export" ? "이미지 만들기 실패" : "불러오기 실패";
     document.getElementById("meta").textContent = e.message;
     console.error(e);
   }
