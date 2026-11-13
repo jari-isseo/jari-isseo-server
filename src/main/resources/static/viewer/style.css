@@ -28,6 +28,8 @@ h1 .count { color: #2e9e5b; }
   width: 100%;
   touch-action: manipulation;   /* 두 번 탭 확대 막고 탭 즉시 처리 (핀치 줌은 허용) (#8) */
   -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;     /* 빠르게 여러 번 눌러도 테이블 번호 글자가 선택(파란 블록)되지 않게 (#9) */
+  user-select: none;
   height: auto;          /* viewBox 비율대로 높이 자동 → 모바일에서 위아래 빈 공간 없음 */
   max-height: 70vh;
   background: #fff;
