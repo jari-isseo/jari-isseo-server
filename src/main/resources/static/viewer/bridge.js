@@ -51,6 +51,9 @@ window.applyStatus = (tableId, occupied) => {
   const id = String(tableId);
   pendingTables.delete(id);
   viewer.occupied.set(id, occupied === true || occupied === "true");
+  // 방금 바뀌었으므로 '마지막 업데이트'를 지금으로 → 'N시간 전'·'정보 오래됨'이 바로 사라짐
+  // (서버 시각은 이후 SSE status 로 들어오면 그 값으로 덮어씀)
+  if (viewer.snapshot) viewer.snapshot.lastUpdatedAt = new Date(nowTime()).toISOString();
   refresh();
 };
 
