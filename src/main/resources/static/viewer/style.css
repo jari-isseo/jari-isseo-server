@@ -30,9 +30,18 @@ h1 { margin: 0 0 4px; font-size: 20px; }
 /* 앞쪽 벽·변: 얇은 테두리선만 (#5) */
 .wall-front { stroke: #c9c9cf; stroke-width: 1.5; stroke-linecap: round; }
 
-/* 테이블 중심점 (#6에서 도형으로 바뀜) */
-.table-dot { fill: #2e9e5b; }
-.table-label { font-size: 12px; fill: #333; }
+/* 테이블 (#6) — 상태 색은 #7에서 .free / .busy 로 덮어씀 */
+.table .top    { fill: #e7e8ec; stroke: #b9bcc4; stroke-width: 1; stroke-linejoin: round; }
+.table .side-x { fill: #c9ccd4; stroke: #c9ccd4; stroke-width: 0.6; }
+.table .side-z { fill: #d6d8de; stroke: #d6d8de; stroke-width: 0.6; }
+
+/* 의자 (#6) — 시안처럼 흰 작은 상자 */
+.chair .top    { fill: #ffffff; stroke: #c4c6cc; stroke-width: 1; stroke-linejoin: round; }
+.chair .side-x { fill: #dfe0e4; stroke: #c4c6cc; stroke-width: 0.6; }
+.chair .side-z { fill: #eceef1; stroke: #c4c6cc; stroke-width: 0.6; }
+
+/* 테이블 이름 (개발용, ?debug=1) — 정식 이름표는 #7 */
+.table-label { font-size: 11px; font-weight: 700; fill: #333; pointer-events: none; }
 
 /* 개발용 기준점 (?debug=1 일 때만) */
 .axis-dot { stroke: #fff; stroke-width: 1.5; }

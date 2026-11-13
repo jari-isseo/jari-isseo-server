@@ -2,6 +2,7 @@
 //  자리있어 웹 렌더러
 //  #4: 투영 함수 + SVG 뼈대
 //  #5: 바닥면 + 벽 (뒤쪽 벽만 높게, 앞쪽은 테두리선)
+//  #6: 테이블·의자 도형 + 가림 순서
 // =====================================================
 
 // ---------- 설정 ----------
@@ -10,6 +11,12 @@ const HEIGHT_SCALE = 60; // 높이 1m = 화면 위로 60px
 const WALL_HEIGHT = 0.8;     // 낮은 벽 높이 (m) — 안쪽이 보이도록 낮게
 const WALL_THICKNESS = 0.12; // 벽 두께 (m) — 윗면이 살짝 보이게
 const PADDING = 40;      // 그림 바깥 여백 (px)
+
+// 가구 크기 (m) — 실제 높이보다 낮게 잡아 시안처럼 납작한 상자로 보이게
+const TABLE_HEIGHT = 0.35;
+const CHAIR_HEIGHT = 0.22;
+const CHAIR_SIZE = 0.4;
+const ROUND_SEGMENTS = 24;   // 원형 테이블을 몇 각형으로 근사할지
 const SVG_NS = "http://www.w3.org/2000/svg";
 const DEBUG = new URLSearchParams(location.search).get("debug") === "1";
 
@@ -174,13 +181,179 @@ function drawWalls(svg, floor, points) {
   }
 }
 
-// 테이블 중심점 (#6에서 도형으로 교체)
-function drawTableDots(svg, floor, points) {
-  for (const t of floor.tables) {
-    const p = toScreen(t.x, t.z);
-    points.push(p);
-    svgEl("circle", { cx: p.sx, cy: p.sy, r: 4, class: "table-dot" }, svg);
-    addText(svg, p.sx + 6, p.sy + 4, t.name, "table-label");
+// ---------- 가구 바닥 모양 ----------
+// 테이블 바닥 모양: 꼭짓점 [x, z] 배열 (크기·회전·원형 반영)
+//   rotation 은 위에서 내려다봤을 때(x 오른쪽, z 아래) 시계 방향 각도(도)
+function tableFootprint(t) {
+  const w = t.width ?? 0.7;
+  const d = t.depth ?? 0.7;
+
+  // 중심 기준 꼭짓점 (회전 전)
+  let local;
+  if (t.shape === "ROUND") {
+    // 원형: width·depth 를 지름으로 하는 원(같지 않으면 타원)을 다각형으로 근사
+    local = [];
+    for (let i = 0; i < ROUND_SEGMENTS; i++) {
+      const a = (i / ROUND_SEGMENTS) * Math.PI * 2;
+      local.push([(w / 2) * Math.cos(a), (d / 2) * Math.sin(a)]);
+    }
+  } else {
+    local = [[-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2]];
+  }
+
+  // 회전 후 테이블 중심으로 이동 (타원형 원탁도 회전이 반영됨)
+  const r = ((t.rotation ?? 0) * Math.PI) / 180;
+  const cos = Math.cos(r);
+  const sin = Math.sin(r);
+  return local.map(([px, pz]) => [t.x + px * cos - pz * sin, t.z + px * sin + pz * cos]);
+}
+
+// 의자 바닥 모양: 중심 기준 작은 정사각형
+function chairFootprint(c) {
+  const h = CHAIR_SIZE / 2;
+  return [[c.x - h, c.z - h], [c.x + h, c.z - h], [c.x + h, c.z + h], [c.x - h, c.z + h]];
+}
+
+// ---------- 입체 도형 (바닥 모양을 위로 세운 기둥) ----------
+// 꼭짓점 순서를 한 방향(반시계)으로 맞춘다 — 바깥쪽 법선 계산용
+function counterClockwise(pts) {
+  let area = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const [x1, z1] = pts[i];
+    const [x2, z2] = pts[(i + 1) % pts.length];
+    area += x1 * z2 - x2 * z1;
+  }
+  return area < 0 ? [...pts].reverse() : pts;
+}
+
+// 화면에서 보이는 옆면(앞쪽을 향한 면)과 윗면을 그린다.
+//   옆면 바깥 법선 (nx, nz) 가 화면 앞쪽(x + z 증가)을 향하면 보이는 면.
+//   오른쪽(x)을 향한 면과 왼쪽 아래(z)를 향한 면의 밝기를 다르게 해 입체감을 준다.
+function drawPrism(svg, footprint, height, cls, points) {
+  const pts = counterClockwise(footprint);
+  const g = svgEl("g", { class: cls }, svg);
+
+  for (let i = 0; i < pts.length; i++) {
+    const [x1, z1] = pts[i];
+    const [x2, z2] = pts[(i + 1) % pts.length];
+    const nx = z2 - z1;            // 반시계 순서일 때 바깥쪽 법선
+    const nz = -(x2 - x1);
+    if (nx + nz <= 1e-9) continue; // 뒤를 향한 면은 안 보임
+
+    const face = [
+      toScreen(x1, z1, 0), toScreen(x2, z2, 0),
+      toScreen(x2, z2, height), toScreen(x1, z1, height),
+    ];
+    points.push(...face);
+    svgEl("polygon", { points: toPoints(face), class: nx > nz ? "side-x" : "side-z" }, g);
+  }
+
+  const top = pts.map(([x, z]) => toScreen(x, z, height));
+  points.push(...top);
+  svgEl("polygon", { points: toPoints(top), class: "top" }, g);
+  return g;
+}
+
+// ---------- 가림 순서 ----------
+// 바닥 모양을 감싸는 사각형 범위
+function boundsOf(footprint) {
+  const xs = footprint.map((p) => p[0]);
+  const zs = footprint.map((p) => p[1]);
+  return { minX: Math.min(...xs), maxX: Math.max(...xs), minZ: Math.min(...zs), maxZ: Math.max(...zs) };
+}
+
+// 화면에 그려질 범위 (겹치는지 판단용)
+function screenBoundsOf(footprint, height) {
+  const pts = footprint.flatMap(([x, z]) => [toScreen(x, z, 0), toScreen(x, z, height)]);
+  const xs = pts.map((p) => p.sx);
+  const ys = pts.map((p) => p.sy);
+  return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
+}
+
+function screenOverlaps(a, b) {
+  return a.minX < b.maxX && b.minX < a.maxX && a.minY < b.maxY && b.minY < a.maxY;
+}
+
+// a 가 b 보다 확실히 뒤(화면 위쪽)에 있으면 true.
+//   시점은 x·z 가 큰 쪽(앞)에서 내려다보므로,
+//   a 가 x 방향으로 b 보다 완전히 작거나, z 방향으로 완전히 작으면 a 가 뒤다.
+//   (중심점만 비교하면 긴 테이블 옆의 작은 테이블에서 순서가 뒤집힐 수 있다)
+function isBehind(a, b) {
+  return a.bounds.maxX <= b.bounds.minX + 1e-9 || a.bounds.maxZ <= b.bounds.minZ + 1e-9;
+}
+
+// 화면에서 겹치는 가구끼리만 "뒤 → 앞" 관계를 만들고 그 순서대로 정렬한다 (위상 정렬).
+//   관계를 정할 수 없는 경우(바닥 범위가 서로 겹침)와 남은 동률은 중심 깊이(x + z)로 정한다.
+function sortByDepth(items) {
+  const n = items.length;
+  const after = items.map(() => []);   // after[i] = i 보다 나중에 그려야 하는 것들
+  const inDegree = new Array(n).fill(0);
+
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const a = items[i];
+      const b = items[j];
+      if (!screenOverlaps(a.screen, b.screen)) continue;   // 안 겹치면 순서 상관없음
+
+      let behind;   // 먼저 그릴 쪽
+      if (isBehind(a, b)) behind = i;
+      else if (isBehind(b, a)) behind = j;
+      else behind = (a.depth - b.depth || a.height - b.height) <= 0 ? i : j;
+
+      const front = behind === i ? j : i;
+      after[behind].push(front);
+      inDegree[front]++;
+    }
+  }
+
+  // 먼저 그릴 수 있는 것 중 중심 깊이가 작은 것부터 꺼낸다
+  const byDepth = (x, y) => items[x].depth - items[y].depth || items[x].height - items[y].height;
+  const ready = [];
+  for (let i = 0; i < n; i++) if (inDegree[i] === 0) ready.push(i);
+  const order = [];
+  const done = new Array(n).fill(false);
+
+  while (order.length < n) {
+    if (ready.length === 0) {
+      // 순환이 생긴 드문 경우: 남은 것 중 가장 뒤의 것을 강제로 꺼낸다
+      const rest = [...Array(n).keys()].filter((i) => !done[i]).sort(byDepth);
+      ready.push(rest[0]);
+    }
+    ready.sort(byDepth);
+    const i = ready.shift();
+    if (done[i]) continue;
+    done[i] = true;
+    order.push(items[i]);
+    for (const k of after[i]) {
+      if (--inDegree[k] === 0 && !done[k]) ready.push(k);
+    }
+  }
+  return order;
+}
+
+// 테이블·의자를 뒤(화면 위쪽)부터 그린다 → 앞의 것이 뒤의 것을 덮음
+function drawFurniture(svg, floor, points) {
+  const items = [
+    ...(floor.chairs ?? []).map((c) => ({ kind: "chair", item: c, footprint: chairFootprint(c), height: CHAIR_HEIGHT })),
+    ...(floor.tables ?? []).map((t) => ({ kind: "table", item: t, footprint: tableFootprint(t), height: TABLE_HEIGHT })),
+  ].map((it) => ({
+    ...it,
+    depth: it.item.x + it.item.z,
+    bounds: boundsOf(it.footprint),
+    screen: screenBoundsOf(it.footprint, it.height),
+  }));
+
+  for (const { kind, item, footprint, height } of sortByDepth(items)) {
+    if (kind === "chair") {
+      drawPrism(svg, footprint, height, "chair", points);
+    } else {
+      const g = drawPrism(svg, footprint, height, "table", points);
+      g.dataset.tableId = item.id;   // #7 상태 색, 탭 처리에서 사용
+      if (DEBUG) {
+        const p = toScreen(item.x, item.z, height);
+        addText(svg, p.sx, p.sy + 4, item.name, "table-label", { "text-anchor": "middle" });
+      }
+    }
   }
 }
 
@@ -210,14 +383,14 @@ function fitViewBox(svg, points) {
   svg.setAttribute("viewBox", `${minX} ${minY} ${w} ${h}`);
 }
 
-// 그리는 순서 = 겹치는 순서: 바닥 → 벽 → 테이블
+// 그리는 순서 = 겹치는 순서: 바닥 → 벽 → 가구(테이블·의자)
 function draw(svg, floor) {
   svg.innerHTML = "";
   const points = [];   // viewBox 계산용 (화면 좌표 모음)
 
   drawFloor(svg, floor, points);
   drawWalls(svg, floor, points);
-  drawTableDots(svg, floor, points);
+  drawFurniture(svg, floor, points);
   if (DEBUG) drawAxes(svg, points);
 
   fitViewBox(svg, points);
@@ -240,7 +413,7 @@ async function main() {
 
     document.getElementById("title").textContent = floor.name;
     document.getElementById("info").textContent =
-      `sample=${name} · 테이블 ${floor.tables.length}개 · 전체 ${floors.length}개 층` +
+      `sample=${name} · 테이블 ${floor.tables?.length ?? 0}개 · 의자 ${floor.chairs?.length ?? 0}개 · 전체 ${floors.length}개 층` +
       (floor.walls?.length ? "" : " · walls 없음 → 바닥 경계로 대체");
 
     draw(document.getElementById("stage"), floor);
