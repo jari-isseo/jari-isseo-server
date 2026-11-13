@@ -83,3 +83,7 @@ h1 .count { color: #2e9e5b; }
   .map { padding: 0 4px; }
   .floor-name, .legend { margin-left: 14px; }
 }
+
+/* 키보드로 테이블에 포커스했을 때 (#8) */
+.table:focus { outline: none; }
+.table:focus-visible .top { stroke: #1f6feb; stroke-width: 3; }
