@@ -23,7 +23,9 @@
     jari-isseo-server/
     ├── src/main/java/com/jariisseo/
     │   ├── JariisseoApplication.java   서버 시작점
-    │   └── global/config/              공통 설정 (Security, Swagger)
+    │   └── global/
+    │       ├── config/                 공통 설정 (Security, Swagger, dev 샘플 경로)
+    │       └── error/                  공통 에러 응답 { code, message }
     ├── src/main/resources/
     │   ├── application.properties      서버 설정 (DB 접속 값은 .env 에서 읽음)
     │   └── static/viewer/              웹 렌더러 (손님 웹 · 사장님 앱 WebView 공용)
@@ -32,6 +34,7 @@
     │       ├── bridge.js               사장님 앱(WebView) 브리지
     │       ├── export.js               출력 모드 PNG 생성
     │       └── style.css
+    ├── deploy/docker-compose.dev.yml   로컬 MySQL (Docker 쓰는 경우)
     ├── docs/samples/                   배치·스냅샷 샘플 JSON (앱·서버·웹 공통 데이터 형식)
     ├── .env.example                    로컬 환경변수 예시 (복사해서 .env 로 사용)
     └── build.gradle
@@ -88,6 +91,18 @@
 2. PC의 IP 확인 (`ipconfig` → IPv4 주소)
 3. PC와 **같은 와이파이**에 연결된 폰에서 `http://{PC IP}:5500/src/main/resources/static/viewer/index.html?sample=snapshot`
 4. 안 열리면 Windows 방화벽에서 5500 포트 허용
+
+## 에러 응답
+
+모든 API 에러는 같은 모양으로 응답합니다 (API 정의서 7장).
+
+```json
+{ "code": "TABLE_NOT_FOUND", "message": "테이블을 찾을 수 없어요" }
+```
+
+- 서비스 코드에서: `throw new ApiException(ErrorCode.TABLE_NOT_FOUND);`
+- 코드 목록: `global/error/ErrorCode.java`
+- `message`는 사용자에게 그대로 보여줄 수 있는 한국어 문장
 
 ## 문서
 

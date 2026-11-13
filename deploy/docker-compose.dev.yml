@@ -1,0 +1,31 @@
+# 로컬 개발용 MySQL (Docker 를 쓰는 경우. MySQL 을 직접 설치했다면 필요 없음)
+#
+# 실행 (레포 루트에서):
+#   docker compose --env-file .env -f deploy/docker-compose.dev.yml up -d
+# 중지:
+#   docker compose --env-file .env -f deploy/docker-compose.dev.yml down
+#
+# 접속 정보는 .env 의 DB_* 값을 그대로 쓴다 (계정은 root).
+name: jariisseo
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: jariisseo-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:?.env 의 DB_PASSWORD 를 채워주세요}
+      MYSQL_DATABASE: ${DB_NAME:-jariisseo}
+      TZ: Asia/Seoul
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "127.0.0.1:${DB_PORT:-3306}:3306"   # 이 PC 에서만 접속 가능 (같은 와이파이의 다른 기기에서 DB 접근 차단)
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  mysql-data:
