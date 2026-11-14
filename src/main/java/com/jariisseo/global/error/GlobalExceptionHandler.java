@@ -1,9 +1,11 @@
 package com.jariisseo.global.error;
 
+import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.core.AuthenticationException;
@@ -13,11 +15,14 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 // 컨트롤러·서비스에서 생긴 예외를 API 정의서 7장 형식 { code, message } 으로 바꿔 응답한다.
+//   응답 형식을 application/json 으로 못박아 둔다 → SSE 요청(Accept: text/event-stream)이 404 등으로 실패해도
+//   "JSON 은 받을 수 없는 요청" 으로 한 번 더 실패하지 않고 { code, message } 가 그대로 내려간다 (#18)
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -61,6 +66,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleMethod(HttpRequestMethodNotSupportedException e) {
         return ResponseEntity.status(ErrorCode.METHOD_NOT_ALLOWED.status())
                 .headers(e.getHeaders())
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(ErrorResponse.of(ErrorCode.METHOD_NOT_ALLOWED));
     }
 
@@ -68,6 +74,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<ErrorResponse> handleTooLarge(MaxUploadSizeExceededException e) {
         return ResponseEntity.status(HttpStatus.CONTENT_TOO_LARGE)
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(ErrorResponse.of(ErrorCode.INVALID_REQUEST, "요청 크기가 너무 커요"));
     }
 
@@ -75,6 +82,13 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AuthenticationException.class)
     public ResponseEntity<ErrorResponse> handleAuth(AuthenticationException e) {
         return respond(ErrorCode.UNAUTHORIZED, ErrorCode.UNAUTHORIZED.message());
+    }
+
+    // 손님이 SSE 페이지를 닫은 뒤 전송하려 한 경우 → 서버 오류가 아님. 이미 끊긴 연결이라 응답도 쓰지 않는다
+    //   (HttpServletResponse 를 받으면 스프링이 '응답 처리 끝'으로 보고 더 쓰지 않음)
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public void handleClientGone(AsyncRequestNotUsableException e, HttpServletResponse response) {
+        log.debug("클라이언트 연결 끊김: {}", e.getMessage());
     }
 
     // 그 밖의 모든 예외
@@ -93,6 +107,7 @@ public class GlobalExceptionHandler {
             };
             return ResponseEntity.status(status)
                     .headers(framework.getHeaders())
+                    .contentType(MediaType.APPLICATION_JSON)
                     .body(ErrorResponse.of(code));
         }
 
@@ -102,6 +117,8 @@ public class GlobalExceptionHandler {
     }
 
     private ResponseEntity<ErrorResponse> respond(ErrorCode code, String message) {
-        return ResponseEntity.status(code.status()).body(ErrorResponse.of(code, message));
+        return ResponseEntity.status(code.status())
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(ErrorResponse.of(code, message));
     }
 }
