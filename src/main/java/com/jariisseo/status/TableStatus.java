@@ -8,6 +8,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 
 // 테이블 손님 있음/없음 (API 정의서 8장). 자주 바뀌므로 배치(layout)와 분리
 @Entity
@@ -35,13 +36,18 @@ public class TableStatus {
         this.id = new TableStatusId(storeId, tableId);
         this.occupied = occupied;
         this.source = source;
-        this.updatedAt = Instant.now();
+        this.updatedAt = now();
     }
 
     public void change(boolean occupied, StatusSource source) {
         this.occupied = occupied;
         this.source = source;
-        this.updatedAt = Instant.now();
+        this.updatedAt = now();
+    }
+
+    // 밀리초까지만 (DB 는 마이크로초까지 저장) → 저장 직후 응답과 DB 에서 다시 읽은 응답의 시각 표기가 같도록 (#15)
+    private static Instant now() {
+        return Instant.now().truncatedTo(ChronoUnit.MILLIS);
     }
 
     public TableStatusId getId() {
