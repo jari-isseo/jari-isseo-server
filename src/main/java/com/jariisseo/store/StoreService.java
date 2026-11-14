@@ -37,7 +37,11 @@ public class StoreService {
     // 보낸 필드만 수정. 트랜잭션이 끝날 때 바뀐 값이 DB 에 자동 반영된다 (JPA 변경 감지)
     @Transactional
     public MyStoreResponse updateMyStore(Long storeId, UpdateStoreRequest request) {
-        Store store = findStore(storeId);
+        // 매장 행을 잠가서 같은 매장의 수정을 한 번에 하나씩 처리
+        //   잠그지 않으면 이름 수정과 영업 상태 수정이 동시에 오면, 각자 상대 필드의 옛 값을 store 이벤트로 보낼 수 있다
+        //   (DB 에는 둘 다 반영되지만 손님 화면에는 옛 값이 잠깐 보임). 조회(GET)는 잠그지 않는다
+        Store store = storeRepository.findByIdForUpdate(storeId)
+                .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED));
         boolean changed = false;
         if (request.name() != null && !request.name().strip().equals(store.getName())) {
             store.rename(request.name().strip());
