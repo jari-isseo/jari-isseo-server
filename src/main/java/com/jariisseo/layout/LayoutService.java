@@ -44,10 +44,14 @@ public class LayoutService {
     // 배치 저장 (항상 모든 층을 포함한 배치 전체). 처음이면 version 1, 다시 저장하면 +1
     @Transactional
     public LayoutResponse saveMyLayout(Long storeId, LayoutData request) {
-        Store store = storeRepository.findById(storeId)
+        LayoutData data = LayoutValidator.normalize(request);   // 규칙 위반이면 400 INVALID_LAYOUT (잠그기 전에 먼저)
+
+        // 매장 행을 잠가서 같은 매장의 저장을 한 번에 하나씩 처리
+        //   잠그지 않으면 두 저장이 같은 옛 상태를 읽고 각자 써서, version 이 한 번만 오르거나
+        //   테이블 상태가 실제 배치와 어긋날 수 있다. 조회(GET)는 잠그지 않는다
+        Store store = storeRepository.findByIdForUpdate(storeId)
                 .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED));
 
-        LayoutData data = LayoutValidator.normalize(request);   // 규칙 위반이면 400 INVALID_LAYOUT
         String json = objectMapper.writeValueAsString(data);
 
         Layout layout = layoutRepository.findByStoreId(storeId)
