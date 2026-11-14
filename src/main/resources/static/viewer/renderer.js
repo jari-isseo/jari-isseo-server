@@ -48,6 +48,23 @@ const SAMPLE_FILES = {
   snapshot: "sample-snapshot.json",
 };
 
+// 손님 링크 /s/{publicId} 로 열렸으면 그 매장의 publicId, 아니면 null (샘플 모드)
+const PUBLIC_ID = location.pathname.match(/^\/s\/([^/]+)\/?$/)?.[1] ?? null;
+
+// 데이터 불러오기 (#16)
+//   /s/{publicId}  → 서버 스냅샷 API (배치 + 상태)
+//   그 외(개발용)  → ?sample= 샘플 JSON
+// 둘 다 { name, layout, snapshot } 모양으로 돌려준다. 스냅샷 API 응답은 sample-snapshot.json 과 같은 형식
+async function loadData() {
+  if (!PUBLIC_ID) return loadSample();
+
+  const res = await fetch(`/api/public/stores/${encodeURIComponent(PUBLIC_ID)}`);
+  if (res.status === 404) throw new Error("매장을 찾을 수 없어요. 링크를 다시 확인해 주세요");
+  if (!res.ok) throw new Error(`매장 정보를 불러오지 못했어요 (HTTP ${res.status})`);
+  const data = await res.json();
+  return { name: `publicId=${PUBLIC_ID}`, layout: data.layout, snapshot: data };
+}
+
 async function loadSample() {
   const name = new URLSearchParams(location.search).get("sample") || "layout";
   const file = SAMPLE_FILES[name];
@@ -612,6 +629,9 @@ function renderSummary(layout, snapshot, occupied) {
   $("headline").innerHTML = "";
   if (!store.open) {
     $("headline").textContent = "지금은 영업하지 않아요";
+  } else if (total === 0) {
+    // 벽만 먼저 저장하고 테이블은 아직 등록하지 않은 매장 (#14: 테이블 0개 허용)
+    $("headline").textContent = "아직 테이블을 준비하고 있어요";
   } else if (total > 0 && unknown === total) {
     $("headline").textContent = "아직 빈자리 정보가 없어요";
   } else if (free > 0) {
@@ -660,6 +680,16 @@ function pickFloors(floors) {
   return [found ?? floors[0]];
 }
 
+// 배치가 없는 매장: 지도 대신 안내 문구
+function showNoLayout(snapshot) {
+  const $ = (id) => document.getElementById(id);
+  $("store").textContent = snapshot?.store?.name ?? "";
+  $("headline").textContent = "아직 매장 배치를 준비하고 있어요";
+  $("meta").textContent = "사장님이 배치를 저장하면 여기에서 빈자리를 볼 수 있어요";
+  $("stale").hidden = true;
+  document.querySelector(".map").hidden = true;
+}
+
 // ---------- 시작 ----------
 async function main() {
   document.body.classList.add(`mode-${MODE}`);
@@ -672,7 +702,15 @@ async function main() {
   }
 
   try {
-    const { name, layout, snapshot } = await loadSample();
+    const { name, layout, snapshot } = await loadData();
+
+    // 매장은 있지만 배치를 아직 저장하지 않음 (스냅샷의 layout: null)
+    if (!layout) {
+      showNoLayout(snapshot);
+      callBridge("onReady");
+      return;
+    }
+
     const floors = [...layout.floors].sort((a, b) => a.order - b.order);
     const picked = pickFloors(floors);
 
@@ -702,6 +740,7 @@ async function main() {
     // 출력 모드는 위쪽 안내 영역을 숨겨두므로, 실패하면 다시 보이게 해서 에러 문구가 나오도록
     document.body.classList.remove("mode-export");
     document.getElementById("headline").textContent = MODE === "export" ? "이미지 만들기 실패" : "불러오기 실패";
+    document.querySelector(".map").hidden = true;   // 빈 지도 카드는 숨김
     document.getElementById("meta").textContent = e.message;
     console.error(e);
   }
