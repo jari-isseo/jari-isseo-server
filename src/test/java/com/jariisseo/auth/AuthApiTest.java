@@ -79,6 +79,33 @@ class AuthApiTest {
     }
 
     @Test
+    @DisplayName("한글 25자 비밀번호(75바이트)는 500 이 아니라 400 INVALID_REQUEST")
+    void passwordOverBcryptByteLimit() throws Exception {
+        String koreanPassword = "가".repeat(25);   // 25자지만 UTF-8 로 75바이트 > 72
+
+        mvc.perform(post("/api/auth/signup").contentType(MediaType.APPLICATION_JSON)
+                        .content(signupJson(newLoginId(), koreanPassword, "Cafe")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+    }
+
+    @Test
+    @DisplayName("만료·잘못된 토큰을 붙여도 로그인·가입은 막히지 않는다 (토큰은 /api/owner/** 에서만 검사)")
+    void staleTokenDoesNotBlockAuth() throws Exception {
+        String loginId = newLoginId();
+
+        mvc.perform(post("/api/auth/signup").contentType(MediaType.APPLICATION_JSON)
+                        .header("Authorization", "Bearer expired-or-broken-token")
+                        .content(signupJson(loginId, "password123", "Cafe Moon")))
+                .andExpect(status().isCreated());
+
+        mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                        .header("Authorization", "Bearer expired-or-broken-token")
+                        .content(loginJson(loginId, "password123")))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     @DisplayName("로그인 성공 → 토큰 + expiresIn 30일, 실패 → 401 INVALID_CREDENTIALS")
     void login() throws Exception {
         String loginId = newLoginId();
