@@ -6,6 +6,7 @@
 //  #7: 상태 색·테이블 이름·빈자리 요약·정보 오래됨 표시
 //  #8: 테이블 탭 판정 + 화면 크기 자동 맞춤
 //  #9: mode 분기(손님·사장님·출력) + 앱 브리지 (bridge.js, export.js)
+//  #20: 실시간 반영 (live.js) — 이벤트를 받으면 viewer 를 고치고 다시 그림
 // =====================================================
 
 // ---------- 설정 ----------
@@ -662,6 +663,8 @@ function refresh() {
     : null;
 
   renderSummary(viewer.layout, viewer.snapshot, viewer.occupied);
+  // 영업 종료면 지도를 흐리게 → 빈자리 색이 보여도 지금 갈 수 없다는 게 한눈에 보이게 (#20)
+  document.body.classList.toggle("is-closed", viewer.snapshot?.store?.open === false);
   draw(svg, viewer.floor, viewer.occupied, pendingTables);
 
   if (focusedId) {
@@ -683,11 +686,45 @@ function pickFloors(floors) {
 // 배치가 없는 매장: 지도 대신 안내 문구
 function showNoLayout(snapshot) {
   const $ = (id) => document.getElementById(id);
+  const open = snapshot?.store?.open !== false;
   $("store").textContent = snapshot?.store?.name ?? "";
-  $("headline").textContent = "아직 매장 배치를 준비하고 있어요";
-  $("meta").textContent = "사장님이 배치를 저장하면 여기에서 빈자리를 볼 수 있어요";
+  $("headline").textContent = open ? "아직 매장 배치를 준비하고 있어요" : "지금은 영업하지 않아요";
+  $("meta").textContent = open ? "사장님이 배치를 저장하면 여기에서 빈자리를 볼 수 있어요" : "";
   $("stale").hidden = true;
   document.querySelector(".map").hidden = true;
+}
+
+// 데이터 { name, layout, snapshot } 로 화면 전체를 그린다 (#20)
+//   처음 열 때, 그리고 배치가 바뀌었거나 재연결해서 다시 불러왔을 때 같은 함수를 쓴다.
+//   다시 그릴 때는 보고 있던 층을 유지한다 (그 층이 사라졌으면 첫 층)
+function render({ name, layout, snapshot }) {
+  viewer.snapshot = snapshot;
+
+  // 매장은 있지만 배치를 아직 저장하지 않음 (스냅샷의 layout: null)
+  if (!layout) {
+    viewer.layout = null;
+    showNoLayout(snapshot);
+    return;
+  }
+
+  const floors = [...layout.floors].sort((a, b) => a.order - b.order);
+  const kept = viewer.floor && floors.find((f) => f.id === viewer.floor.id);
+  viewer.layout = layout;
+  viewer.floor = kept ?? pickFloors(floors)[0];
+  // tableId → 손님 있음 여부
+  viewer.occupied = new Map((snapshot?.statuses ?? []).map((s) => [s.tableId, s.occupied]));
+
+  document.querySelector(".map").hidden = false;   // 배치 없음 화면에서 넘어온 경우 다시 보이게
+  document.getElementById("floorName").textContent = viewer.floor.name;
+  showInfo(name, floors);
+  refresh();
+}
+
+// 개발용 정보 한 줄 (모드, 샘플 이름, 개수)
+function showInfo(name, floors) {
+  document.getElementById("info").textContent =
+    `mode=${MODE} · sample=${name} · 테이블 ${viewer.floor.tables?.length ?? 0}개 · 의자 ${viewer.floor.chairs?.length ?? 0}개 · 전체 ${floors.length}개 층` +
+    (viewer.floor.walls?.length ? "" : " · walls 없음 → 바닥 경계로 대체");
 }
 
 // ---------- 시작 ----------
@@ -702,31 +739,20 @@ async function main() {
   }
 
   try {
-    const { name, layout, snapshot } = await loadData();
-
-    // 매장은 있지만 배치를 아직 저장하지 않음 (스냅샷의 layout: null)
-    if (!layout) {
-      showNoLayout(snapshot);
-      callBridge("onReady");
-      return;
-    }
-
-    const floors = [...layout.floors].sort((a, b) => a.order - b.order);
-    const picked = pickFloors(floors);
-
-    viewer.layout = layout;
-    viewer.snapshot = snapshot;
-    viewer.floor = picked[0];
-    // tableId → 손님 있음 여부
-    viewer.occupied = new Map((snapshot?.statuses ?? []).map((s) => [s.tableId, s.occupied]));
-
-    document.getElementById("floorName").textContent = viewer.floor.name;
-    document.getElementById("info").textContent =
-      `mode=${MODE} · sample=${name} · 테이블 ${viewer.floor.tables?.length ?? 0}개 · 의자 ${viewer.floor.chairs?.length ?? 0}개 · 전체 ${floors.length}개 층` +
-      (viewer.floor.walls?.length ? "" : " · walls 없음 → 바닥 경계로 대체");
+    const data = await loadData();
 
     if (MODE === "export") {
       // 출력: 상태 색 없이 그려서 PNG 로 (요약·상태는 쓰지 않음)
+      if (!data.layout) {
+        showNoLayout(data.snapshot);
+        callBridge("onReady");
+        return;
+      }
+      const floors = [...data.layout.floors].sort((a, b) => a.order - b.order);
+      const picked = pickFloors(floors);
+      viewer.layout = data.layout;
+      viewer.floor = picked[0];
+      showInfo(data.name, floors);
       draw(document.getElementById("stage"), viewer.floor);
       callBridge("onReady");
       await runExport(picked);
@@ -734,8 +760,12 @@ async function main() {
     }
 
     if (MODE === "owner") setupOwnerMode();
-    refresh();
+    render(data);
     callBridge("onReady");
+
+    // 손님 화면: 서버와 연결을 유지하며 상태 변화를 바로 반영 (#20, live.js)
+    //   사장님 모드는 앱이 applyStatus 로 알려주므로 연결하지 않는다 (앱 WebView 쪽은 android 7-1)
+    if (MODE === "customer" && PUBLIC_ID) connectLive();
   } catch (e) {
     // 출력 모드는 위쪽 안내 영역을 숨겨두므로, 실패하면 다시 보이게 해서 에러 문구가 나오도록
     document.body.classList.remove("mode-export");
