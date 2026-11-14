@@ -16,7 +16,10 @@ public enum ErrorCode {
 
     // 7장에 없던 공통 코드 (#10에서 추가)
     NOT_FOUND(HttpStatus.NOT_FOUND, "요청한 주소를 찾을 수 없어요"),
-    METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "지원하지 않는 요청 방식이에요");
+    METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "지원하지 않는 요청 방식이에요"),
+
+    // 7장에 없던 코드 (#14): 배치를 한 번도 저장하지 않은 매장의 GET /api/owner/store/layout
+    LAYOUT_NOT_FOUND(HttpStatus.NOT_FOUND, "아직 저장된 배치가 없어요");
 
     private final HttpStatus status;
     private final String message;
