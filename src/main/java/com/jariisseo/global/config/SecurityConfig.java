@@ -9,6 +9,8 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
+import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.servlet.HandlerExceptionResolver;
@@ -46,10 +48,23 @@ public class SecurityConfig {
                 // Authorization: Bearer {토큰} 을 JwtConfig 의 jwtDecoder 로 확인
                 //   토큰 없음·서명 틀림·만료 → 401 UNAUTHORIZED
                 .oauth2ResourceServer(oauth2 -> oauth2
+                        .bearerTokenResolver(ownerOnlyBearerTokenResolver())
                         .jwt(Customizer.withDefaults())
                         .authenticationEntryPoint(entryPoint))
                 .exceptionHandling(ex -> ex.authenticationEntryPoint(entryPoint));
         return http.build();
+    }
+
+    // 토큰은 사장님 API(/api/owner/**)에서만 읽는다.
+    //   앱이 만료된 토큰을 들고 로그인(/api/auth/login)하거나 손님 API 를 불러도
+    //   토큰 검사에 걸려 401 이 되지 않도록, 다른 경로에서는 토큰을 없는 것으로 취급
+    private static BearerTokenResolver ownerOnlyBearerTokenResolver() {
+        DefaultBearerTokenResolver delegate = new DefaultBearerTokenResolver();
+        return request -> {
+            String path = request.getRequestURI().substring(request.getContextPath().length());
+            boolean ownerApi = path.equals("/api/owner") || path.startsWith("/api/owner/");
+            return ownerApi ? delegate.resolve(request) : null;
+        };
     }
 
     // 비밀번호는 BCrypt 해시로만 저장 (API 정의서 3장)
