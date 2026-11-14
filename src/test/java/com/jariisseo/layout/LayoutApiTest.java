@@ -222,6 +222,25 @@ class LayoutApiTest {
     }
 
     @Test
+    @DisplayName("대문자·공백이 들어간 id(DB 에서 다른 id 와 같은 키로 보일 수 있음) → 400 INVALID_LAYOUT")
+    void invalidIdCharacters() throws Exception {
+        // 't-a' 와 'T-A' 는 MySQL 기본 정렬 규칙에서 같은 값 → 글자 제한으로 막는다
+        expectInvalid(layout(floor("f-1", "1층", 0, "t-a", "T-A")));
+        expectInvalid(layout(floor("f-1", "1층", 0, "t-a", "t-a ")));
+        expectInvalid(layout(floor("F-1", "1층", 0, "t-a")));
+    }
+
+    @Test
+    @DisplayName("바닥 꼭짓점 201개 → 400 INVALID_LAYOUT (교차 검사 비용 상한)")
+    void tooManyPolygonPoints() throws Exception {
+        // 50 x 50 사각형 둘레에 꼭짓점 201개 (가로변 위에 점을 촘촘히)
+        String points = java.util.stream.IntStream.range(0, 199)
+                .mapToObj(i -> "[" + (i * 0.25) + ",0]")
+                .collect(Collectors.joining(","));
+        expectInvalid(layoutWithPolygon("[" + points + ",[50,50],[0,50]]"));
+    }
+
+    @Test
     @DisplayName("좌표 0~100 밖, 크기 0.3~3 밖, 모양이 RECT·ROUND 아님, 이름 21자 → 400 INVALID_LAYOUT")
     void invalidTableValues() throws Exception {
         expectInvalid(layoutWithTable("""
