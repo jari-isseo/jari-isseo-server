@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -35,10 +36,17 @@ public class LayoutService {
 
     @Transactional(readOnly = true)
     public LayoutResponse getMyLayout(Long storeId) {
-        Layout layout = layoutRepository.findByStoreId(storeId)
+        return findLayout(storeId)
                 .orElseThrow(() -> new ApiException(ErrorCode.LAYOUT_NOT_FOUND));
-        LayoutData data = objectMapper.readValue(layout.getData(), LayoutData.class);
-        return new LayoutResponse(layout.getVersion(), data.unit(), data.floors());
+    }
+
+    // 저장된 배치가 없으면 빈 Optional (손님 스냅샷은 이때 layout: null, #16)
+    @Transactional(readOnly = true)
+    public Optional<LayoutResponse> findLayout(Long storeId) {
+        return layoutRepository.findByStoreId(storeId).map(layout -> {
+            LayoutData data = objectMapper.readValue(layout.getData(), LayoutData.class);
+            return new LayoutResponse(layout.getVersion(), data.unit(), data.floors());
+        });
     }
 
     // 배치 저장 (항상 모든 층을 포함한 배치 전체). 처음이면 version 1, 다시 저장하면 +1
