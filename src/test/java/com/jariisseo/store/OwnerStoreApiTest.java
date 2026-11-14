@@ -116,6 +116,20 @@ class OwnerStoreApiTest {
     }
 
     @Test
+    @DisplayName("PATCH: strip() 하면 비어버리는 이름(제어문자 U+001C, 전각 공백 U+2003)도 400")
+    void patchNameEmptyAfterStrip() throws Exception {
+        // JSON 문자열 안의 유니코드 이스케이프 → 서버에는 제어문자·전각 공백 1글자로 도착
+        for (String escaped : new String[]{"\\u001c", "\\u2003"}) {
+            patchStore("""
+                    {"name": "%s"}
+                    """.formatted(escaped))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        }
+        assertThat(storeRepository.findByPublicId(publicId).orElseThrow().getName()).isEqualTo("Cafe Moon");
+    }
+
+    @Test
     @DisplayName("토큰 없이 PATCH → 401 UNAUTHORIZED")
     void patchWithoutToken() throws Exception {
         mvc.perform(patch("/api/owner/store").contentType(MediaType.APPLICATION_JSON).content("{\"open\": false}"))

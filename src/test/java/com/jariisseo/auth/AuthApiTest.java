@@ -79,6 +79,15 @@ class AuthApiTest {
     }
 
     @Test
+    @DisplayName("전각 공백(U+2003)만 있는 매장 이름은 400 INVALID_REQUEST")
+    void storeNameOnlyWhitespace() throws Exception {
+        mvc.perform(post("/api/auth/signup").contentType(MediaType.APPLICATION_JSON)
+                        .content(signupJson(newLoginId(), "password123", "\\u2003")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+    }
+
+    @Test
     @DisplayName("한글 25자 비밀번호(75바이트)는 500 이 아니라 400 INVALID_REQUEST")
     void passwordOverBcryptByteLimit() throws Exception {
         String koreanPassword = "가".repeat(25);   // 25자지만 UTF-8 로 75바이트 > 72
