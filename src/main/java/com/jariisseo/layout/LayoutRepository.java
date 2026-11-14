@@ -8,4 +8,7 @@ public interface LayoutRepository extends JpaRepository<Layout, Long> {
 
     // store.id 로 찾기 (매장당 배치 1개)
     Optional<Layout> findByStoreId(Long storeId);
+
+    // 내 매장 정보의 hasLayout (#12)
+    boolean existsByStoreId(Long storeId);
 }
