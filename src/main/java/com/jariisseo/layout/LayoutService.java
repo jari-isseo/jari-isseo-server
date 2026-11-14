@@ -4,11 +4,13 @@ import com.jariisseo.global.error.ApiException;
 import com.jariisseo.global.error.ErrorCode;
 import com.jariisseo.layout.dto.LayoutData;
 import com.jariisseo.layout.dto.LayoutResponse;
+import com.jariisseo.realtime.StoreChangedEvent;
 import com.jariisseo.status.StatusSource;
 import com.jariisseo.status.TableStatus;
 import com.jariisseo.status.TableStatusRepository;
 import com.jariisseo.store.Store;
 import com.jariisseo.store.StoreRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
@@ -25,13 +27,16 @@ public class LayoutService {
     private final StoreRepository storeRepository;
     private final TableStatusRepository tableStatusRepository;
     private final ObjectMapper objectMapper;   // 스프링 부트가 만들어 둔 JSON 변환기 (Jackson 3)
+    private final ApplicationEventPublisher events;
 
     public LayoutService(LayoutRepository layoutRepository, StoreRepository storeRepository,
-                         TableStatusRepository tableStatusRepository, ObjectMapper objectMapper) {
+                         TableStatusRepository tableStatusRepository, ObjectMapper objectMapper,
+                         ApplicationEventPublisher events) {
         this.layoutRepository = layoutRepository;
         this.storeRepository = storeRepository;
         this.tableStatusRepository = tableStatusRepository;
         this.objectMapper = objectMapper;
+        this.events = events;
     }
 
     @Transactional(readOnly = true)
@@ -70,7 +75,8 @@ public class LayoutService {
                 .orElseGet(() -> layoutRepository.save(new Layout(store, json)));
 
         syncTableStatuses(storeId, data);
-        // 저장 후 SSE layout 이벤트는 SSE 이슈(4-2)에서 추가
+        // 손님 화면은 { version } 만 받고 스냅샷 API 를 다시 불러 전체를 새로 그린다
+        events.publishEvent(StoreChangedEvent.layout(storeId, layout.getVersion()));
 
         return new LayoutResponse(layout.getVersion(), data.unit(), data.floors());
     }
