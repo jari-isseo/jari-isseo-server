@@ -17,7 +17,8 @@ import java.util.Set;
 // 배치 검증 + 기본값 채우기 (API 정의서 2장 "서버 검증 규칙")
 //   - 층 1~10개, 층 id·order 중복 금지, 층 이름 1~20자
 //   - 바닥 다각형 3점 이상, 자기 교차 금지
-//   - 층마다 테이블 1~100개, 테이블 id 는 모든 층을 통틀어 중복 금지, 이름 1~20자
+//   - 층마다 테이블 0~100개 (벽만 먼저 저장하고 사물은 나중에 → 0개 허용, #14 앱과 합의)
+//     테이블 id 는 모든 층을 통틀어 중복 금지, 이름 1~20자
 //   - 좌표 0~100m, 크기 0.3~3m, 회전 0~359도, 모양 RECT·ROUND
 // 하나라도 어기면 400 INVALID_LAYOUT (어느 층·어느 값이 문제인지 message 에 적는다)
 final class LayoutValidator {
@@ -27,7 +28,7 @@ final class LayoutValidator {
     static final double MAX_SIZE = 3.0;
     static final double DEFAULT_SIZE = 0.7;
     static final int MAX_FLOORS = 10;
-    static final int MAX_TABLES_PER_FLOOR = 100;
+    static final int MAX_TABLES_PER_FLOOR = 100;   // 최소는 0 (벽만 저장하는 1단계)
     static final int MAX_NAME = 20;
     static final int MAX_ID = 50;   // table_status.table_id 컬럼 길이
     private static final double EPS = 1e-9;
@@ -111,8 +112,11 @@ final class LayoutValidator {
     }
 
     private static List<TableData> checkTables(List<TableData> tables, Set<String> tableIds, String where) {
-        if (tables == null || tables.isEmpty() || tables.size() > MAX_TABLES_PER_FLOOR) {
-            throw invalid(where + "테이블은 층마다 1~" + MAX_TABLES_PER_FLOOR + "개여야 해요");
+        if (tables == null) {
+            return List.of();   // 벽만 스캔한 단계
+        }
+        if (tables.size() > MAX_TABLES_PER_FLOOR) {
+            throw invalid(where + "테이블은 층마다 " + MAX_TABLES_PER_FLOOR + "개까지예요");
         }
         List<TableData> normalized = new ArrayList<>();
         for (TableData t : tables) {

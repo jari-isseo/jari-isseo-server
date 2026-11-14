@@ -188,10 +188,34 @@ class LayoutApiTest {
         expectInvalid(layout(floor("f-1", "1층", 0, "t-a"), floor("f-2", "2층", 0, "t-b")));
     }
 
+    // ---------- 벽만 먼저 저장 (1단계: 벽 인식 → 2단계: 사물 인식) ----------
+
     @Test
-    @DisplayName("테이블 개수(0개, 101개), 테이블 id 가 다른 층과 중복 → 400 INVALID_LAYOUT")
+    @DisplayName("테이블 없이 벽·바닥만 저장할 수 있고, 나중에 테이블을 추가하면 상태가 생긴다")
+    void wallsFirstThenTables() throws Exception {
+        // 1단계: 벽만 (tables 가 빈 배열이어도, 아예 없어도 OK)
+        putLayout(layout(floor("f-1", "1층", 0)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(1))
+                .andExpect(jsonPath("$.floors[0].tables.length()").value(0));
+        putLayout(layout("""
+                {"id": "f-1", "name": "1층", "order": 0,
+                 "floor": {"polygon": [[0,0],[8,0],[8,6],[0,6]]},
+                 "walls": [{"id": "w1", "from": [0,0], "to": [8,0]}]}"""))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.floors[0].tables.length()").value(0));
+        assertThat(statuses()).isEmpty();
+
+        // 2단계: 같은 층에 테이블 추가
+        putLayout(layout(floor("f-1", "1층", 0, "t-a", "t-b")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(3));
+        assertThat(statuses()).containsOnlyKeys("t-a", "t-b");
+    }
+
+    @Test
+    @DisplayName("테이블 101개, 테이블 id 가 다른 층과 중복 → 400 INVALID_LAYOUT")
     void invalidTableCountAndIds() throws Exception {
-        expectInvalid(layout(floor("f-1", "1층", 0)));
         expectInvalid(layout(floor("f-1", "1층", 0,
                 IntStream.range(0, 101).mapToObj(i -> "t-" + i).toArray(String[]::new))));
         expectInvalid(layout(floor("f-1", "1층", 0, "t-a"), floor("f-2", "2층", 1, "t-a")));
@@ -225,7 +249,7 @@ class LayoutApiTest {
         putLayout(layout(floor("f-1", "1층", 0, "t-a"))).andExpect(status().isOk());
         occupy("t-a");
 
-        expectInvalid(layout(floor("f-1", "1층", 0)));   // 테이블 0개 → 실패
+        expectInvalid(layout(floor("f-1", "1층", 0, "t-a"), floor("f-1", "2층", 1, "t-b")));   // 층 id 중복 → 실패
 
         mvc.perform(get("/api/owner/store/layout").header("Authorization", "Bearer " + token))
                 .andExpect(jsonPath("$.version").value(1));
