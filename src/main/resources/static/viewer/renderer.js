@@ -695,6 +695,8 @@ function showNoLayout(snapshot) {
   $("meta").textContent = open ? "사장님이 배치를 저장하면 여기에서 빈자리를 볼 수 있어요" : "";
   $("stale").hidden = true;
   document.querySelector(".map").hidden = true;
+  // 사장님 모드는 평소 header 를 숨기지만, 배치가 없을 때는 안내 문구가 보여야 하므로 다시 보이게 (style.css)
+  document.body.classList.add("no-layout");
   if (MODE === "owner") reportSummary();   // 테이블이 없으니 0 / 0
 }
 
@@ -720,6 +722,7 @@ function render({ name, layout, snapshot }) {
   viewer.occupied = new Map((snapshot?.statuses ?? []).map((s) => [s.tableId, s.occupied]));
 
   document.querySelector(".map").hidden = false;   // 배치 없음 화면에서 넘어온 경우 다시 보이게
+  document.body.classList.remove("no-layout");
   document.getElementById("floorName").textContent = viewer.floor.name;
   showInfo(name, floors);
   refresh();
