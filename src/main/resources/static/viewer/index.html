@@ -12,6 +12,8 @@
     <h1 id="headline">불러오는 중…</h1>
     <p id="meta" class="meta"></p>
     <p id="stale" class="stale" hidden>⚠️ 정보가 오래되었을 수 있어요</p>
+    <!-- 실시간 연결이 끊겨 있는 동안만 보임 (#20) -->
+    <p id="live" class="live" hidden>연결이 끊겼어요 · 다시 연결하는 중…</p>
   </header>
 
   <section class="map">
@@ -30,9 +32,10 @@
   <!-- 개발용 정보 (모드, 샘플 이름, 개수) -->
   <p id="info" class="info"></p>
 
-  <!-- bridge.js·export.js 는 함수만 정의, 실행은 renderer.js 의 main() -->
+  <!-- bridge.js·export.js·live.js 는 함수만 정의, 실행은 renderer.js 의 main() -->
   <script src="bridge.js"></script>
   <script src="export.js"></script>
+  <script src="live.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>
