@@ -168,15 +168,26 @@ Authorization: Bearer {{token}}
 > {%
     client.test("전체 비우기 → 모두 손님 없음", () => {
         client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.statuses.length > 0, "statuses 비어 있음");
         client.assert(response.body.statuses.every(s => s.occupied === false), "occupied");
         client.assert(response.body.lastUpdatedAt, "lastUpdatedAt");
     });
 %}
 
-# 에러 확인 (API 정의서 7장) — 모두 { "code", "message" } 형식
-# INTERNAL_ERROR(500)는 일부러 만들 수 없어 단위 테스트(GlobalExceptionHandlerTest)로 확인
+### 12. 비운 뒤 손님 스냅샷 → 저장된 상태도 모두 손님 없음
+GET {{host}}/api/public/stores/{{publicId}}
+
+> {%
+    client.test("비우기가 저장됨 → 손님 화면도 모두 빈자리", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.statuses.length > 0, "statuses 비어 있음");
+        client.assert(response.body.statuses.every(s => s.occupied === false), "occupied");
+    });
+%}
 
 ### E1. INVALID_REQUEST (400): 아이디 형식 오류
+# ── 여기부터 에러 확인 (API 정의서 7장) — 모두 { "code", "message" } 형식
+# INTERNAL_ERROR(500)는 일부러 만들 수 없어 단위 테스트(GlobalExceptionHandlerTest)로 확인
 POST {{host}}/api/auth/signup
 Content-Type: application/json
 
