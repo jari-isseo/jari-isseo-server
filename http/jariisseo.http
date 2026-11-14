@@ -1,0 +1,273 @@
+# 자리있어 서버 API 요청 모음 (#17)
+#
+# IntelliJ 에서 이 파일을 열고, 서버를 켠 뒤(▶ JariisseoApplication)
+#   - 맨 위 ▶▶ (Run All Requests in File) → 위에서부터 전체 흐름 실행
+#   - 또는 요청 왼쪽 ▶ 로 하나씩 실행
+# 각 요청 아래 > {% %} 는 응답을 검사(client.test)하고, 토큰 같은 값을 다음 요청에 넘긴다.
+# 실행할 때마다 새 아이디로 가입하므로 몇 번을 돌려도 된다.
+
+@host = http://localhost:8080
+
+### 1. 가입 (매장 동시 생성) → 201, 토큰·publicId 저장
+< {%
+    // 실행할 때마다 겹치지 않는 아이디 (영문 소문자·숫자 4~20자)
+    client.global.set("loginId", "cafe" + Date.now());
+%}
+POST {{host}}/api/auth/signup
+Content-Type: application/json
+
+{
+  "loginId": "{{loginId}}",
+  "password": "password123",
+  "storeName": "카페 문"
+}
+
+> {%
+    client.test("가입 → 201, 토큰·publicId", () => {
+        client.assert(response.status === 201, "status " + response.status);
+        client.assert(response.body.accessToken, "accessToken 없음");
+        client.assert(response.body.store.publicId.length === 8, "publicId 8자리 아님");
+    });
+    client.global.set("token", response.body.accessToken);
+    client.global.set("publicId", response.body.store.publicId);
+%}
+
+### 2. 로그인 → 200, 토큰 30일
+POST {{host}}/api/auth/login
+Content-Type: application/json
+
+{
+  "loginId": "{{loginId}}",
+  "password": "password123"
+}
+
+> {%
+    client.test("로그인 → 200, expiresIn 30일", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.expiresIn === 2592000, "expiresIn " + response.body.expiresIn);
+    });
+    client.global.set("token", response.body.accessToken);
+%}
+
+### 3. 내 매장 조회 → 아직 배치 없음 (hasLayout false)
+GET {{host}}/api/owner/store
+Authorization: Bearer {{token}}
+
+> {%
+    client.test("내 매장 → hasLayout false, shareUrl", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.hasLayout === false, "hasLayout");
+        client.assert(response.body.shareUrl.endsWith("/s/" + client.global.get("publicId")), "shareUrl");
+    });
+%}
+
+### 4. 매장 수정 (보낸 필드만)
+PATCH {{host}}/api/owner/store
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "카페 문 성수점"
+}
+
+> {%
+    client.test("매장 이름만 수정, 영업 상태 그대로", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.name === "카페 문 성수점", "name");
+        client.assert(response.body.open === true, "open");
+    });
+%}
+
+### 5. 배치 저장 (샘플 JSON 파일을 그대로 보냄) → version 1
+PUT {{host}}/api/owner/store/layout
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+< ../docs/samples/sample-layout.json
+
+> {%
+    client.test("배치 저장 → 200, version 1, 2개 층", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.version === 1, "version " + response.body.version);
+        client.assert(response.body.floors.length === 2, "floors");
+    });
+%}
+
+### 6. 배치 조회
+GET {{host}}/api/owner/store/layout
+Authorization: Bearer {{token}}
+
+> {%
+    client.test("배치 조회 → 저장한 배치", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.floors[0].id === "f-1a2b", "floor id");
+    });
+%}
+
+### 7. 테이블 상태 전환: 1번(t-3f9a) 손님 있음
+PUT {{host}}/api/owner/tables/t-3f9a/status
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "occupied": true
+}
+
+> {%
+    client.test("상태 전환 → occupied true, MANUAL", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.occupied === true, "occupied");
+        client.assert(response.body.source === "MANUAL", "source");
+    });
+    client.global.set("firstUpdatedAt", response.body.updatedAt);
+%}
+
+### 8. 같은 요청 한 번 더 → 결과 같음 (멱등)
+PUT {{host}}/api/owner/tables/t-3f9a/status
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "occupied": true
+}
+
+> {%
+    client.test("같은 요청 두 번 → updatedAt 까지 같음", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.updatedAt === client.global.get("firstUpdatedAt"), "updatedAt 달라짐");
+    });
+%}
+
+### 9. 손님 스냅샷 (토큰 없음)
+GET {{host}}/api/public/stores/{{publicId}}
+
+> {%
+    client.test("스냅샷 → 배치 + 상태, 1번 사용 중", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.layout.version === 1, "layout");
+        const t1 = response.body.statuses.find(s => s.tableId === "t-3f9a");
+        client.assert(t1 && t1.occupied === true, "t-3f9a 상태");
+        client.assert(response.body.statuses.length === 11, "statuses 11개");
+    });
+%}
+
+### 10. 손님 웹 페이지 (브라우저로 열면 배치도: http://localhost:8080/s/{publicId})
+GET {{host}}/s/{{publicId}}
+
+> {%
+    client.test("손님 페이지 → HTML, 기준 경로 /viewer/", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(String(response.body).includes('<base href="/viewer/">'), "base href");
+    });
+%}
+
+### 11. 전체 비우기
+POST {{host}}/api/owner/tables/status/reset
+Authorization: Bearer {{token}}
+
+> {%
+    client.test("전체 비우기 → 모두 손님 없음", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.statuses.every(s => s.occupied === false), "occupied");
+        client.assert(response.body.lastUpdatedAt, "lastUpdatedAt");
+    });
+%}
+
+# 에러 확인 (API 정의서 7장) — 모두 { "code", "message" } 형식
+# INTERNAL_ERROR(500)는 일부러 만들 수 없어 단위 테스트(GlobalExceptionHandlerTest)로 확인
+
+### E1. INVALID_REQUEST (400): 아이디 형식 오류
+POST {{host}}/api/auth/signup
+Content-Type: application/json
+
+{
+  "loginId": "AB",
+  "password": "short",
+  "storeName": "카페"
+}
+
+> {%
+    client.test("400 INVALID_REQUEST", () => {
+        client.assert(response.status === 400 && response.body.code === "INVALID_REQUEST", response.status + " " + response.body.code);
+    });
+%}
+
+### E2. LOGIN_ID_TAKEN (409): 같은 아이디로 다시 가입
+POST {{host}}/api/auth/signup
+Content-Type: application/json
+
+{
+  "loginId": "{{loginId}}",
+  "password": "password123",
+  "storeName": "카페 문"
+}
+
+> {%
+    client.test("409 LOGIN_ID_TAKEN", () => {
+        client.assert(response.status === 409 && response.body.code === "LOGIN_ID_TAKEN", response.status + " " + response.body.code);
+    });
+%}
+
+### E3. INVALID_CREDENTIALS (401): 비밀번호 틀림
+POST {{host}}/api/auth/login
+Content-Type: application/json
+
+{
+  "loginId": "{{loginId}}",
+  "password": "wrong-password"
+}
+
+> {%
+    client.test("401 INVALID_CREDENTIALS", () => {
+        client.assert(response.status === 401 && response.body.code === "INVALID_CREDENTIALS", response.status + " " + response.body.code);
+    });
+%}
+
+### E4. UNAUTHORIZED (401): 토큰 없이 사장님 API
+GET {{host}}/api/owner/store
+
+> {%
+    client.test("401 UNAUTHORIZED", () => {
+        client.assert(response.status === 401 && response.body.code === "UNAUTHORIZED", response.status + " " + response.body.code);
+    });
+%}
+
+### E5. INVALID_LAYOUT (400): 층이 하나도 없음
+PUT {{host}}/api/owner/store/layout
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "unit": "m",
+  "floors": []
+}
+
+> {%
+    client.test("400 INVALID_LAYOUT", () => {
+        client.assert(response.status === 400 && response.body.code === "INVALID_LAYOUT", response.status + " " + response.body.code);
+    });
+%}
+
+### E6. TABLE_NOT_FOUND (404): 없는 테이블
+PUT {{host}}/api/owner/tables/t-none/status
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "occupied": true
+}
+
+> {%
+    client.test("404 TABLE_NOT_FOUND", () => {
+        client.assert(response.status === 404 && response.body.code === "TABLE_NOT_FOUND", response.status + " " + response.body.code);
+    });
+%}
+
+### E7. STORE_NOT_FOUND (404): 없는 publicId
+GET {{host}}/api/public/stores/nostore1
+
+> {%
+    client.test("404 STORE_NOT_FOUND", () => {
+        client.assert(response.status === 404 && response.body.code === "STORE_NOT_FOUND", response.status + " " + response.body.code);
+    });
+%}
