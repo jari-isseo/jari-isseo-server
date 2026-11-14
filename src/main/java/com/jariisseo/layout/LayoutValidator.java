@@ -16,7 +16,9 @@ import java.util.Set;
 
 // 배치 검증 + 기본값 채우기 (API 정의서 2장 "서버 검증 규칙")
 //   - 층 1~10개, 층 id·order 중복 금지, 층 이름 1~20자
-//   - 바닥 다각형 3점 이상, 자기 교차 금지
+//   - 층·테이블 id 는 영문 소문자·숫자·-·_ 1~50자 (예: f-1a2b, t-3f9a)
+//     → DB 는 대소문자·끝 공백을 구분하지 않아 'T-A' 와 't-a' 를 같은 키로 본다. 글자를 제한해 그런 충돌 자체를 막음
+//   - 바닥 다각형 3~200점, 자기 교차 금지
 //   - 층마다 테이블 0~100개 (벽만 먼저 저장하고 사물은 나중에 → 0개 허용, #14 앱과 합의)
 //     테이블 id 는 모든 층을 통틀어 중복 금지, 이름 1~20자
 //   - 좌표 0~100m, 크기 0.3~3m, 회전 0~359도, 모양 RECT·ROUND
@@ -31,6 +33,8 @@ final class LayoutValidator {
     static final int MAX_TABLES_PER_FLOOR = 100;   // 최소는 0 (벽만 저장하는 1단계)
     static final int MAX_NAME = 20;
     static final int MAX_ID = 50;   // table_status.table_id 컬럼 길이
+    static final int MAX_POLYGON_POINTS = 200;   // 자기 교차 검사는 점 개수의 제곱만큼 걸려서 상한을 둔다
+    private static final java.util.regex.Pattern ID_PATTERN = java.util.regex.Pattern.compile("[a-z0-9_-]{1,50}");
     private static final double EPS = 1e-9;
 
     private LayoutValidator() {
@@ -85,8 +89,9 @@ final class LayoutValidator {
     }
 
     private static FloorShape checkFloorShape(FloorShape shape, String where) {
-        if (shape == null || shape.polygon() == null || shape.polygon().size() < 3) {
-            throw invalid(where + "바닥은 꼭짓점이 3개 이상이어야 해요");
+        if (shape == null || shape.polygon() == null
+                || shape.polygon().size() < 3 || shape.polygon().size() > MAX_POLYGON_POINTS) {
+            throw invalid(where + "바닥 꼭짓점은 3~" + MAX_POLYGON_POINTS + "개여야 해요");
         }
         for (double[] point : shape.polygon()) {
             checkPoint(point, where + "바닥 꼭짓점");
@@ -167,8 +172,8 @@ final class LayoutValidator {
     // ---------- 작은 검사들 ----------
 
     private static void checkId(String id, String what) {
-        if (id == null || id.isBlank() || id.length() > MAX_ID) {
-            throw invalid(what + "는 1~" + MAX_ID + "자여야 해요");
+        if (id == null || !ID_PATTERN.matcher(id).matches()) {
+            throw invalid(what + "는 영문 소문자·숫자·-·_ 1~" + MAX_ID + "자여야 해요: " + id);
         }
     }
 
