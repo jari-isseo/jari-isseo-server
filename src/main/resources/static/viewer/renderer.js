@@ -772,8 +772,8 @@ async function main() {
     //   사장님 모드는 앱이 applyStatus 로 알려주므로 연결하지 않는다 (앱 WebView 쪽은 android 7-1)
     if (MODE === "customer" && PUBLIC_ID) connectLive();
   } catch (e) {
-    // 출력 모드는 위쪽 안내 영역을 숨겨두므로, 실패하면 다시 보이게 해서 에러 문구가 나오도록
-    document.body.classList.remove("mode-export");
+    // 출력·사장님 모드는 위쪽 안내 영역을 숨겨두므로, 실패하면 다시 보이게 해서 에러 문구가 나오도록 (#49)
+    document.body.classList.remove("mode-export", "mode-owner");
     document.getElementById("headline").textContent = MODE === "export" ? "이미지 만들기 실패" : "불러오기 실패";
     document.querySelector(".map").hidden = true;   // 빈 지도 카드는 숨김
     document.getElementById("meta").textContent = e.message;
