@@ -2,9 +2,11 @@ package com.jariisseo.status;
 
 import com.jariisseo.global.error.ApiException;
 import com.jariisseo.global.error.ErrorCode;
+import com.jariisseo.realtime.StoreChangedEvent;
 import com.jariisseo.status.dto.StatusSnapshotResponse;
 import com.jariisseo.status.dto.TableStatusResponse;
 import com.jariisseo.store.StoreRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,10 +17,13 @@ public class TableStatusService {
 
     private final TableStatusRepository tableStatusRepository;
     private final StoreRepository storeRepository;
+    private final ApplicationEventPublisher events;
 
-    public TableStatusService(TableStatusRepository tableStatusRepository, StoreRepository storeRepository) {
+    public TableStatusService(TableStatusRepository tableStatusRepository, StoreRepository storeRepository,
+                              ApplicationEventPublisher events) {
         this.tableStatusRepository = tableStatusRepository;
         this.storeRepository = storeRepository;
+        this.events = events;
     }
 
     // 테이블 1개 상태 바꾸기
@@ -32,7 +37,9 @@ public class TableStatusService {
 
         if (status.isOccupied() != occupied) {
             status.change(occupied, StatusSource.MANUAL);
-            // 성공 시 SSE status 이벤트는 SSE 이슈(4-2)에서 추가
+            // 실제로 바뀐 경우에만 손님 화면에 status 이벤트 (같은 값이면 보내지 않음)
+            events.publishEvent(StoreChangedEvent.status(storeId, new StatusSnapshotResponse.StatusItem(
+                    status.getTableId(), status.isOccupied(), status.getUpdatedAt())));
         }
         return TableStatusResponse.from(status);
     }
@@ -44,8 +51,10 @@ public class TableStatusService {
         lockStore(storeId);
         List<TableStatus> statuses = tableStatusRepository.findByIdStoreId(storeId);
         statuses.forEach(status -> status.change(false, StatusSource.MANUAL));
-        // SSE snapshot 이벤트는 SSE 이슈(4-2)에서 추가
-        return StatusSnapshotResponse.of(statuses);
+        StatusSnapshotResponse snapshot = StatusSnapshotResponse.of(statuses);
+        // 손님 화면은 상태 전체를 이 내용으로 교체 (응답과 같은 모양)
+        events.publishEvent(StoreChangedEvent.snapshot(storeId, snapshot));
+        return snapshot;
     }
 
     // 배치 저장(#14)과 같은 매장 행 잠금 → 배치 저장이 테이블 상태를 지우는 도중에 상태를 바꾸는 일이 없도록

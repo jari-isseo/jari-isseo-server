@@ -3,9 +3,11 @@ package com.jariisseo.store;
 import com.jariisseo.global.error.ApiException;
 import com.jariisseo.global.error.ErrorCode;
 import com.jariisseo.layout.LayoutRepository;
+import com.jariisseo.realtime.StoreChangedEvent;
 import com.jariisseo.store.dto.MyStoreResponse;
 import com.jariisseo.store.dto.UpdateStoreRequest;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,11 +17,14 @@ public class StoreService {
     private final StoreRepository storeRepository;
     private final LayoutRepository layoutRepository;
     private final String publicBaseUrl;
+    private final ApplicationEventPublisher events;
 
     public StoreService(StoreRepository storeRepository, LayoutRepository layoutRepository,
-                        @Value("${app.public-base-url}") String publicBaseUrl) {
+                        @Value("${app.public-base-url}") String publicBaseUrl,
+                        ApplicationEventPublisher events) {
         this.storeRepository = storeRepository;
         this.layoutRepository = layoutRepository;
+        this.events = events;
         // 끝에 / 가 붙어 있어도 //s/ 가 되지 않게
         this.publicBaseUrl = publicBaseUrl.replaceAll("/+$", "");
     }
@@ -32,13 +37,23 @@ public class StoreService {
     // 보낸 필드만 수정. 트랜잭션이 끝날 때 바뀐 값이 DB 에 자동 반영된다 (JPA 변경 감지)
     @Transactional
     public MyStoreResponse updateMyStore(Long storeId, UpdateStoreRequest request) {
-        Store store = findStore(storeId);
-        if (request.name() != null) {
+        // 매장 행을 잠가서 같은 매장의 수정을 한 번에 하나씩 처리
+        //   잠그지 않으면 이름 수정과 영업 상태 수정이 동시에 오면, 각자 상대 필드의 옛 값을 store 이벤트로 보낼 수 있다
+        //   (DB 에는 둘 다 반영되지만 손님 화면에는 옛 값이 잠깐 보임). 조회(GET)는 잠그지 않는다
+        Store store = storeRepository.findByIdForUpdate(storeId)
+                .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED));
+        boolean changed = false;
+        if (request.name() != null && !request.name().strip().equals(store.getName())) {
             store.rename(request.name().strip());
+            changed = true;
         }
-        if (request.open() != null) {
+        if (request.open() != null && request.open() != store.isOpen()) {
             store.changeOpen(request.open());
-            // open 변경 시 SSE store 이벤트는 SSE 이슈(4-2)에서 추가
+            changed = true;
+        }
+        // 실제로 바뀐 경우에만 손님 화면에 store 이벤트 (이름·영업 상태 갱신)
+        if (changed) {
+            events.publishEvent(StoreChangedEvent.store(storeId, store.getName(), store.isOpen()));
         }
         return toResponse(store);
     }

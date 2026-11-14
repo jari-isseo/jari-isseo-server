@@ -70,7 +70,7 @@ public class StoreEventHub {
         return emitter;
     }
 
-    // 매장의 모든 손님 화면에 이벤트 전송 (status·layout·store·snapshot). 변경 이벤트 발행은 #19 에서 연결
+    // 매장의 모든 손님 화면에 이벤트 전송 (status·layout·store·snapshot). 변경이 커밋된 뒤 StoreChangedListener 가 부름 (#19)
     //   변경 이벤트는 빠지면 안 되므로, 스냅샷을 보내는 중인 연결은 끝날 때까지 기다렸다가 보낸다
     public void broadcast(Long storeId, String eventName, Object data) {
         for (Subscriber subscriber : subscribers.getOrDefault(storeId, Set.of())) {
