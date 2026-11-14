@@ -2,6 +2,8 @@ package com.jariisseo.status;
 
 import com.jariisseo.store.StoreRepository;
 import com.jayway.jsonpath.JsonPath;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -35,6 +37,9 @@ class TableStatusApiTest {
     @Autowired
     TableStatusRepository tableStatusRepository;
 
+    @PersistenceContext
+    EntityManager em;
+
     MockMvc mvc;
 
     @BeforeEach
@@ -66,6 +71,12 @@ class TableStatusApiTest {
         Owner owner = newOwnerWithTables("t-a");
 
         String first = body(putStatus(owner, "t-a", true));
+
+        // 실제 서버처럼 두 번째 요청은 DB 에서 다시 읽게 한다 (메모리 캐시를 비움)
+        //   → updatedAt 을 밀리초로 자른 덕분에 DB 에서 읽은 값도 첫 응답과 똑같은지 확인
+        em.flush();
+        em.clear();
+
         String second = body(putStatus(owner, "t-a", true));
 
         assertThat(second).isEqualTo(first);   // updatedAt 까지 같음 (이미 그 값이면 바꾸지 않음)
