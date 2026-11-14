@@ -149,6 +149,8 @@ GET {{host}}/api/public/stores/{{publicId}}
         client.assert(t1 && t1.occupied === true, "t-3f9a 상태");
         client.assert(response.body.statuses.length === 11, "statuses 11개");
     });
+    // 비우기 전 테이블 id 목록을 저장해 두고, 11·12번에서 같은지 비교
+    client.global.set("tableIds", response.body.statuses.map(s => s.tableId).sort().join(","));
 %}
 
 ### 10. 손님 웹 페이지 (브라우저로 열면 배치도: http://localhost:8080/s/{publicId})
@@ -168,7 +170,8 @@ Authorization: Bearer {{token}}
 > {%
     client.test("전체 비우기 → 모두 손님 없음", () => {
         client.assert(response.status === 200, "status " + response.status);
-        client.assert(response.body.statuses.length > 0, "statuses 비어 있음");
+        const ids = response.body.statuses.map(s => s.tableId).sort().join(",");
+        client.assert(ids === client.global.get("tableIds"), "테이블 목록이 비우기 전과 다름: " + ids);
         client.assert(response.body.statuses.every(s => s.occupied === false), "occupied");
         client.assert(response.body.lastUpdatedAt, "lastUpdatedAt");
     });
@@ -180,7 +183,8 @@ GET {{host}}/api/public/stores/{{publicId}}
 > {%
     client.test("비우기가 저장됨 → 손님 화면도 모두 빈자리", () => {
         client.assert(response.status === 200, "status " + response.status);
-        client.assert(response.body.statuses.length > 0, "statuses 비어 있음");
+        const ids = response.body.statuses.map(s => s.tableId).sort().join(",");
+        client.assert(ids === client.global.get("tableIds"), "테이블 목록이 비우기 전과 다름: " + ids);
         client.assert(response.body.statuses.every(s => s.occupied === false), "occupied");
     });
 %}
