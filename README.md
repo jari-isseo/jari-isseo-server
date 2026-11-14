@@ -23,11 +23,12 @@
     jari-isseo-server/
     ├── src/main/java/com/jariisseo/
     │   ├── JariisseoApplication.java   서버 시작점
-    │   ├── store/                      매장 (Store, publicId 생성)
+    │   ├── auth/                       가입·로그인, JWT 발급
+    │   ├── store/                      매장 (Store, publicId 생성, 내 매장 조회)
     │   ├── layout/                     배치 (Layout, JSON 컬럼)
     │   ├── status/                     테이블 상태 (TableStatus, 복합 키)
     │   └── global/
-    │       ├── config/                 공통 설정 (Security, Swagger, dev 샘플 경로)
+    │       ├── config/                 공통 설정 (Security·JWT, Swagger, dev 샘플 경로)
     │       └── error/                  공통 에러 응답 { code, message }
     ├── src/main/resources/
     │   ├── application.properties      서버 설정 (DB 접속 값은 .env 에서 읽음)
