@@ -2,6 +2,7 @@ package com.jariisseo.customer;
 
 import com.jariisseo.store.StoreRepository;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -12,6 +13,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.List;
 
 // 손님 링크 /s/{publicId} → 웹 렌더러(static/viewer/index.html)를 내려준다 (API 정의서 1장·6장)
 //   파일을 그대로 넘기는 게 아니라 문자열로 읽어서 내려주므로,
@@ -23,22 +26,25 @@ public class ViewerPageController {
 
     private final StoreRepository storeRepository;
     private final ResourceLoader resourceLoader;
-    private final String indexLocation;
+    private final List<String> indexCandidates;
 
     // 웹 파일 위치는 Spring 의 static 위치 설정을 따른다
     //   dev: file:src/main/resources/static/ (#10, 수정하면 바로 반영) / 배포: classpath:/static/
+    //   위치가 여러 개면 앞에서부터 viewer/index.html 이 있는 곳을 쓴다 (Spring 의 정적 파일 찾는 순서와 같음)
     public ViewerPageController(StoreRepository storeRepository, ResourceLoader resourceLoader,
                                 @Value("${spring.web.resources.static-locations:classpath:/static/}")
                                 String[] staticLocations) {
         this.storeRepository = storeRepository;
         this.resourceLoader = resourceLoader;
-        String base = staticLocations[0].endsWith("/") ? staticLocations[0] : staticLocations[0] + "/";
-        this.indexLocation = base + "viewer/index.html";
+        this.indexCandidates = Arrays.stream(staticLocations)
+                .map(String::trim)
+                .map(location -> (location.endsWith("/") ? location : location + "/") + "viewer/index.html")
+                .toList();
     }
 
     @GetMapping("/s/{publicId}")
     public ResponseEntity<String> page(@PathVariable String publicId) throws IOException {
-        String html = resourceLoader.getResource(indexLocation).getContentAsString(StandardCharsets.UTF_8);
+        String html = findIndex().getContentAsString(StandardCharsets.UTF_8);
 
         // index.html 은 style.css·renderer.js 를 상대 경로로 부른다.
         // 주소가 /s/{publicId} 라서 그대로 두면 /s/style.css 를 찾게 됨 → 기준 경로를 /viewer/ 로 지정
@@ -48,5 +54,14 @@ public class ViewerPageController {
         // 없는 매장이어도 페이지는 내려주고(화면에서 '매장을 찾을 수 없어요' 표시), 상태 코드만 404
         HttpStatus status = storeRepository.findByPublicId(publicId).isPresent() ? HttpStatus.OK : HttpStatus.NOT_FOUND;
         return ResponseEntity.status(status).contentType(HTML_UTF8).body(html);
+    }
+
+    // 요청마다 찾는다 → dev 에서 파일을 고치거나 위치 설정이 바뀌어도 바로 반영
+    private Resource findIndex() {
+        return indexCandidates.stream()
+                .map(resourceLoader::getResource)
+                .filter(Resource::isReadable)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("viewer/index.html 을 찾을 수 없어요: " + indexCandidates));
     }
 }
