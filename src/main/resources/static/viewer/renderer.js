@@ -7,6 +7,7 @@
 //  #8: 테이블 탭 판정 + 화면 크기 자동 맞춤
 //  #9: mode 분기(손님·사장님·출력) + 앱 브리지 (bridge.js, export.js)
 //  #20: 실시간 반영 (live.js) — 이벤트를 받으면 viewer 를 고치고 다시 그림
+//  #49: 사장님 모드는 배치도만 그리고, 빈자리 요약은 앱에 onSummary 로 전달
 // =====================================================
 
 // ---------- 설정 ----------
@@ -666,6 +667,8 @@ function refresh() {
   // 영업 종료면 지도를 흐리게 → 빈자리 색이 보여도 지금 갈 수 없다는 게 한눈에 보이게 (#20)
   document.body.classList.toggle("is-closed", viewer.snapshot?.store?.open === false);
   draw(svg, viewer.floor, viewer.occupied, pendingTables);
+  // 사장님 모드: 빈자리 요약은 웹이 아니라 앱이 보여준다 → 숫자만 앱에 알림 (#49, bridge.js)
+  if (MODE === "owner") reportSummary();
 
   if (focusedId) {
     [...svg.querySelectorAll(".table")].find((g) => g.dataset.tableId === focusedId)?.focus();
@@ -692,6 +695,7 @@ function showNoLayout(snapshot) {
   $("meta").textContent = open ? "사장님이 배치를 저장하면 여기에서 빈자리를 볼 수 있어요" : "";
   $("stale").hidden = true;
   document.querySelector(".map").hidden = true;
+  if (MODE === "owner") reportSummary();   // 테이블이 없으니 0 / 0
 }
 
 // 데이터 { name, layout, snapshot } 로 화면 전체를 그린다 (#20)
@@ -703,6 +707,7 @@ function render({ name, layout, snapshot }) {
   // 매장은 있지만 배치를 아직 저장하지 않음 (스냅샷의 layout: null)
   if (!layout) {
     viewer.layout = null;
+    viewer.floor = null;
     showNoLayout(snapshot);
     return;
   }

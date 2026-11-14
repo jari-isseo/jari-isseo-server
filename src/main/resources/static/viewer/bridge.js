@@ -6,6 +6,8 @@
 //    OwnerBridge.onReady()                    처음 그리기 완료
 //    OwnerBridge.onTableTap(tableId, occupied) 사장님이 테이블을 탭 (현재 상태)
 //    OwnerBridge.onExport(pngBase64)           출력 모드 PNG 완성
+//    OwnerBridge.onSummary(free, total)        사장님 모드: 지금 보이는 층의 빈 테이블 수 / 전체 테이블 수 (#49)
+//                                              처음 그릴 때(onReady 전), 상태가 바뀔 때, 층을 바꿀 때
 //
 //  앱 → 웹 (evaluateJavascript)
 //    window.applyStatus(tableId, occupied)     API 성공 → 즉시 반영
@@ -44,6 +46,21 @@ function setupOwnerMode() {
     refresh();
     callBridge("onTableTap", tableId, occupied);
   });
+}
+
+// 사장님 모드 빈자리 요약 → 앱 (#49)
+//   웹 화면의 요약 영역은 숨기고(style.css .mode-owner), 앱이 자기 카드에 이 숫자를 보여준다.
+//   - 지금 보이는 층 기준. 상태를 모르는 테이블(회색)은 빈자리에 넣지 않는다
+//   - 값이 그대로면 다시 보내지 않는다 (테이블을 눌러 흐려지기만 한 경우 등)
+let lastSummary = null;
+
+function reportSummary() {
+  const ids = (viewer.floor?.tables ?? []).map((t) => t.id);
+  const free = ids.filter((id) => viewer.occupied.get(id) === false).length;
+  const key = `${viewer.floor?.id ?? ""}:${free}/${ids.length}`;
+  if (key === lastSummary) return;
+  lastSummary = key;
+  callBridge("onSummary", free, ids.length);
 }
 
 // 앱 → 웹. 앱이 문자열로 넘겨도 동작하도록 값을 정리한다.
