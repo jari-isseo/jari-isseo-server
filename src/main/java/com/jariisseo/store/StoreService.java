@@ -3,9 +3,11 @@ package com.jariisseo.store;
 import com.jariisseo.global.error.ApiException;
 import com.jariisseo.global.error.ErrorCode;
 import com.jariisseo.layout.LayoutRepository;
+import com.jariisseo.realtime.StoreChangedEvent;
 import com.jariisseo.store.dto.MyStoreResponse;
 import com.jariisseo.store.dto.UpdateStoreRequest;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,11 +17,14 @@ public class StoreService {
     private final StoreRepository storeRepository;
     private final LayoutRepository layoutRepository;
     private final String publicBaseUrl;
+    private final ApplicationEventPublisher events;
 
     public StoreService(StoreRepository storeRepository, LayoutRepository layoutRepository,
-                        @Value("${app.public-base-url}") String publicBaseUrl) {
+                        @Value("${app.public-base-url}") String publicBaseUrl,
+                        ApplicationEventPublisher events) {
         this.storeRepository = storeRepository;
         this.layoutRepository = layoutRepository;
+        this.events = events;
         // 끝에 / 가 붙어 있어도 //s/ 가 되지 않게
         this.publicBaseUrl = publicBaseUrl.replaceAll("/+$", "");
     }
@@ -33,12 +38,18 @@ public class StoreService {
     @Transactional
     public MyStoreResponse updateMyStore(Long storeId, UpdateStoreRequest request) {
         Store store = findStore(storeId);
-        if (request.name() != null) {
+        boolean changed = false;
+        if (request.name() != null && !request.name().strip().equals(store.getName())) {
             store.rename(request.name().strip());
+            changed = true;
         }
-        if (request.open() != null) {
+        if (request.open() != null && request.open() != store.isOpen()) {
             store.changeOpen(request.open());
-            // open 변경 시 SSE store 이벤트는 SSE 이슈(4-2)에서 추가
+            changed = true;
+        }
+        // 실제로 바뀐 경우에만 손님 화면에 store 이벤트 (이름·영업 상태 갱신)
+        if (changed) {
+            events.publishEvent(StoreChangedEvent.store(storeId, store.getName(), store.isOpen()));
         }
         return toResponse(store);
     }
