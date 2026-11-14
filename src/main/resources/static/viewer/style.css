@@ -97,6 +97,14 @@ h1 .count { color: #2e9e5b; }
 .table.pending { opacity: 0.45; }
 
 /* 출력 모드: 요약·범례 대신 앱에 보낸 PNG 만 보여줌 (#9) */
+/* 사장님 모드: 요약·개발 정보는 앱 화면과 겹치므로 숨기고 배치도를 크게 (#49) */
+.mode-owner header,
+.mode-owner .info { display: none; }
+/* 단, 배치가 아직 없으면 안내 문구(header)는 보여준다 */
+.mode-owner.no-layout header { display: block; }
+.mode-owner .map { padding: 8px 4px 0; }
+.mode-owner #stage { max-height: 85vh; }
+
 .mode-export header,
 .mode-export .map { display: none; }
 .export-preview { display: block; width: calc(100% - 24px); margin: 12px; border: 1px solid #ddd; border-radius: 12px; background: #fff; }
