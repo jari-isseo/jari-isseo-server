@@ -8,11 +8,15 @@ import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import org.hibernate.annotations.DynamicUpdate;
 
 import java.time.Instant;
 
 // 매장 (API 정의서 8장). 매장당 계정이 1개라 로그인 정보도 여기에 함께 둔다.
+// @DynamicUpdate: 바뀐 칸만 UPDATE (기본은 모든 칸을 다시 씀)
+//   동시에 한쪽은 이름, 한쪽은 영업 상태를 바꿔도 서로의 값을 옛날 값으로 덮어쓰지 않는다 (#13)
 @Entity
+@DynamicUpdate
 @Table(name = "store", uniqueConstraints = {
         // 제약 이름을 정해두면, 중복 에러가 났을 때 어느 칸(login_id/public_id)이 겹쳤는지 구분할 수 있다
         @UniqueConstraint(name = Store.UK_LOGIN_ID, columnNames = "login_id"),

@@ -20,7 +20,9 @@ public record SignupRequest(
         @Size(min = 8, max = 64, message = "비밀번호는 8~64자예요")
         String password,
 
+        // @NotBlank 는 trim() 기준이라 전각 공백(U+2003) 같은 건 글자로 봄 → strip() 기준으로 한 번 더 (#13)
         @NotBlank(message = "매장 이름을 입력해 주세요")
+        @Pattern(regexp = "(?s).*\\P{javaWhitespace}.*", message = "매장 이름을 입력해 주세요")
         @Size(max = 50, message = "매장 이름은 50자까지예요")
         String storeName
 ) {
