@@ -40,6 +40,7 @@
     │       ├── export.js               출력 모드 PNG 생성
     │       └── style.css
     ├── deploy/docker-compose.dev.yml   로컬 MySQL (Docker 쓰는 경우)
+    ├── http/jariisseo.http           API 요청 모음 (전체 흐름 + 에러 코드)
     ├── docs/samples/                   배치·스냅샷 샘플 JSON (앱·서버·웹 공통 데이터 형식)
     ├── .env.example                    로컬 환경변수 예시 (복사해서 .env 로 사용)
     └── build.gradle
@@ -96,6 +97,15 @@
 2. PC의 IP 확인 (`ipconfig` → IPv4 주소)
 3. PC와 **같은 와이파이**에 연결된 폰에서 `http://{PC IP}:5500/src/main/resources/static/viewer/index.html?sample=snapshot`
 4. 안 열리면 Windows 방화벽에서 5500 포트 허용
+
+## API 요청 모음 (`http/jariisseo.http`)
+
+IntelliJ HTTP Client 로 서버 API 전체 흐름을 한 번에 실행할 수 있습니다.
+
+1. 서버 실행 (▶ `JariisseoApplication`)
+2. `http/jariisseo.http` 열기 → 맨 위 ▶▶ **Run All Requests in File**
+3. 가입 → 로그인 → 매장 조회·수정 → 배치 저장·조회 → 상태 전환(멱등) → 손님 스냅샷·페이지 → 전체 비우기 → 에러 코드 7개 순서로 실행되고, 각 요청의 검사 결과가 아래 창에 표시됩니다
+4. 실행할 때마다 새 아이디로 가입하므로 여러 번 돌려도 됩니다
 
 ## 에러 응답
 
