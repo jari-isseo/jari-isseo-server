@@ -25,7 +25,7 @@
     │   ├── JariisseoApplication.java   서버 시작점
     │   ├── auth/                       가입·로그인, JWT 발급
     │   ├── store/                      매장 (Store, publicId 생성, 내 매장 조회)
-    │   ├── layout/                     배치 (Layout, JSON 컬럼)
+    │   ├── layout/                     배치 (Layout JSON 컬럼, 조회·저장 API, 검증)
     │   ├── status/                     테이블 상태 (TableStatus, 복합 키)
     │   └── global/
     │       ├── config/                 공통 설정 (Security·JWT, Swagger, dev 샘플 경로)
