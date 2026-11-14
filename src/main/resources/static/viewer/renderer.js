@@ -771,9 +771,10 @@ async function main() {
     render(data);
     callBridge("onReady");
 
-    // 손님 화면: 서버와 연결을 유지하며 상태 변화를 바로 반영 (#20, live.js)
-    //   사장님 모드는 앱이 applyStatus 로 알려주므로 연결하지 않는다 (앱 WebView 쪽은 android 7-1)
-    if (MODE === "customer" && PUBLIC_ID) connectLive();
+    // 서버와 연결을 유지하며 상태 변화를 바로 반영 (#20, live.js)
+    //   사장님 모드도 연결한다 (#49): 다른 기기(직원 폰 등)에서 바꾼 상태도 배치도와 onSummary 에 반영되도록.
+    //   내 탭은 applyStatus 와 SSE status 가 둘 다 오지만 같은 값이라 결과는 같고, onSummary 는 값이 같으면 다시 안 보낸다
+    if (PUBLIC_ID) connectLive();
   } catch (e) {
     // 출력·사장님 모드는 위쪽 안내 영역을 숨겨두므로, 실패하면 다시 보이게 해서 에러 문구가 나오도록 (#49)
     document.body.classList.remove("mode-export", "mode-owner");
