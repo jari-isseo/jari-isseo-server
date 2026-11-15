@@ -4,19 +4,61 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>자리있어</title>
+  <!-- 시안 D 글꼴: 숫자 Roboto, 한글 Noto Sans KR (못 받으면 기기 기본 글꼴) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&family=Roboto:wght@500;700;900&display=swap">
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="view-loading">
   <header>
-    <p id="store" class="store"></p>
-    <h1 id="headline">불러오는 중…</h1>
-    <p id="meta" class="meta"></p>
-    <p id="stale" class="stale" hidden>⚠️ 정보가 오래되었을 수 있어요</p>
-    <!-- 실시간 연결이 끊겨 있는 동안만 보임 (#20) -->
+    <!-- 맨 위: 앱 이름 + 공유 -->
+    <div class="topbar">
+      <span class="brand">자리있어</span>
+      <button id="shareBtn" class="share-btn" type="button" aria-label="이 매장 링크 공유">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>
+      </button>
+    </div>
+
+    <h1 id="store" class="store-name"></h1>
+    <!-- 영업 상태 칩: ● 영업 중 · n분 전 업데이트 -->
+    <p id="statusChip" class="status-chip" hidden><i class="chip-dot"></i><span id="statusText"></span></p>
+    <!-- 실시간 연결이 끊겨 있는 동안만 보임 (#20, live.js) -->
     <p id="live" class="live" hidden>연결이 끊겼어요 · 다시 연결하는 중…</p>
+
+    <!-- 빈자리 카드 (세이지색 덩어리 카드) -->
+    <section id="summary" class="summary-card" aria-live="polite">
+      <div class="summary-main">
+        <p id="summaryLabel" class="summary-label">지금 빈자리</p>
+        <p class="summary-count"><b id="freeCount">–</b><span id="floorTotal" class="summary-total"></span></p>
+        <p id="summaryNote" class="summary-note" hidden></p>
+      </div>
+      <div id="storeTotal" class="summary-side" hidden>
+        <span>매장 전체</span>
+        <b id="storeTotalValue"></b>
+      </div>
+    </section>
+
+    <!-- A. 정보 오래됨 (30분 넘게 변경 없음, AC-05) -->
+    <p id="stale" class="stale" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+      <span><b id="staleMinutes"></b> 동안 바뀐 게 없어요.<br>실제와 다를 수 있어요.</span>
+    </p>
   </header>
 
+  <!-- B~D 상태 안내 카드 (영업 종료 · 배치 없음 · 없는 매장 · 오류) -->
+  <section id="notice" class="notice" hidden>
+    <span id="noticeBadge" class="notice-badge" hidden><i class="chip-dot"></i>영업 종료</span>
+    <span id="noticeIcon" class="notice-icon" aria-hidden="true"></span>
+    <h2 id="noticeTitle" class="notice-title"></h2>
+    <p id="noticeText" class="notice-text"></p>
+  </section>
+
+  <!-- 층 선택 칩: 1층 · 빈3 (층이 2개 이상일 때) -->
+  <nav id="floorTabs" class="floor-tabs" aria-label="층 선택" hidden></nav>
+
   <section class="map">
+    <!-- 사장님 모드에서만 보이는 층 이름 -->
     <p id="floorName" class="floor-name"></p>
     <!-- 아이소메트릭 뷰가 그려질 곳 -->
     <svg id="stage" xmlns="http://www.w3.org/2000/svg"></svg>
@@ -24,7 +66,19 @@
       <span><i class="dot free"></i>빈자리</span>
       <span><i class="dot busy"></i>사용 중</span>
     </p>
+    <p class="map-caption">초록색이 지금 앉을 수 있는 테이블이에요</p>
   </section>
+
+  <!-- 테이블 목록: 빈자리 먼저 -->
+  <ul id="tableList" class="table-list" aria-label="테이블 목록"></ul>
+
+  <p class="footnote">사장님이 직접 알려주는 빈자리예요. 실제와 조금 다를 수 있어요.</p>
+
+  <!-- 화면 읽기 도구 안내용 (항상 있는 live region): 영업 종료·배치 없음·오류 안내 카드가 나타나면 읽어 줌 -->
+  <p id="announcer" class="sr-only" role="status" aria-live="polite"></p>
+
+  <!-- 공유 링크를 복사했을 때 잠깐 보이는 안내 -->
+  <p id="toast" class="toast" role="status" hidden></p>
 
   <!-- 출력 모드(?mode=export)에서 앱에 보낸 PNG 미리보기 -->
   <img id="exportPreview" class="export-preview" alt="출력 이미지" hidden>

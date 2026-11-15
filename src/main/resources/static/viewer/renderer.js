@@ -8,6 +8,7 @@
 //  #9: mode 분기(손님·사장님·출력) + 앱 브리지 (bridge.js, export.js)
 //  #20: 실시간 반영 (live.js) — 이벤트를 받으면 viewer 를 고치고 다시 그림
 //  #49: 사장님 모드는 배치도만 그리고, 빈자리 요약은 앱에 onSummary 로 전달
+//  #53: 디자인 시안 D (빈자리 카드·층 선택 칩·테이블 목록·상태별 안내 카드·공유)
 // =====================================================
 
 // ---------- 설정 ----------
@@ -61,7 +62,7 @@ async function loadData() {
   if (!PUBLIC_ID) return loadSample();
 
   const res = await fetch(`/api/public/stores/${encodeURIComponent(PUBLIC_ID)}`);
-  if (res.status === 404) throw new Error("매장을 찾을 수 없어요. 링크를 다시 확인해 주세요");
+  if (res.status === 404) throw Object.assign(new Error("매장을 찾을 수 없어요"), { notFound: true });
   if (!res.ok) throw new Error(`매장 정보를 불러오지 못했어요 (HTTP ${res.status})`);
   const data = await res.json();
   return { name: `publicId=${PUBLIC_ID}`, layout: data.layout, snapshot: data };
@@ -576,30 +577,94 @@ function isStale(iso) {
   return (nowTime() - Date.parse(iso)) / 60000 > STALE_MINUTES;
 }
 
-// 매장 전체(모든 층) 테이블 수 세기 (FR-U05)
+// 테이블 수 세기 (FR-U05)
 //   free: 상태가 '빈자리'로 확인된 수, unknown: 상태 정보가 없는 수
-function countTables(layout, occupied) {
-  const ids = layout.floors.flatMap((f) => (f.tables ?? []).map((t) => t.id));
+function countIds(ids, occupied) {
   const free = ids.filter((id) => occupied.get(id) === false).length;
   const unknown = ids.filter((id) => !occupied.has(id)).length;
   return { free, unknown, total: ids.length };
+}
+const tableIdsOf = (floor) => (floor?.tables ?? []).map((t) => t.id);
+
+// 매장 전체(모든 층)
+function countTables(layout, occupied) {
+  return countIds(layout.floors.flatMap(tableIdsOf), occupied);
+}
+
+// "42분" / "2시간" / "3일" (오래됨 경고용)
+function durationText(iso) {
+  const minutes = Math.floor((nowTime() - Date.parse(iso)) / 60000);
+  if (minutes < 60) return `${minutes}분`;
+  if (minutes < 60 * 24) return `${Math.floor(minutes / 60)}시간`;
+  return `${Math.floor(minutes / (60 * 24))}일`;
+}
+
+// ---------- 화면 상태 전환 (#53, 시안 D ⑫) ----------
+//   normal: 빈자리 카드 + 배치도 + 목록 / closed: B 영업 종료 / nolayout: C 배치 없음
+//   error: D 없는 매장·불러오기 실패 / preview: 상태 정보 없는 샘플 / loading
+const VIEWS = ["loading", "normal", "closed", "nolayout", "error", "preview"];
+function setView(view) {
+  VIEWS.forEach((v) => document.body.classList.toggle(`view-${v}`, v === view));
+}
+
+const NOTICE_ICONS = {
+  layout: '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M4 11h7V4M11 11v9"/></svg>',
+  search: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/></svg>',
+};
+
+// B~D 안내 카드. icon: "layout" | "search" | null, badge: 영업 종료 칩 표시 여부
+function showNotice({ title, text = "", icon = null, badge = false, closed = false }) {
+  const $ = (id) => document.getElementById(id);
+  $("notice").hidden = false;
+  $("notice").classList.toggle("closed", closed);
+  $("noticeBadge").hidden = !badge;
+  $("noticeIcon").className = `notice-icon${icon === "search" ? " search" : ""}`;
+  $("noticeIcon").innerHTML = icon ? NOTICE_ICONS[icon] : "";
+  $("noticeTitle").textContent = title;
+  $("noticeText").textContent = text;
+  // 안내 카드는 hidden 으로 나타났다 사라지므로, 항상 있는 live region 으로 내용을 읽어 준다 (같은 내용이면 다시 읽지 않음)
+  const message = `${title} ${text}`.replace(/\n/g, " ").trim();
+  if ($("announcer").textContent !== message) $("announcer").textContent = message;
+}
+
+function hideNotice() {
+  document.getElementById("notice").hidden = true;
+  document.getElementById("announcer").textContent = "";
+}
+
+function showClosed(storeName) {
+  setView("closed");
+  document.getElementById("store").textContent = storeName ?? "";
+  stopFreshnessUpdates();
+  showNotice({
+    title: "지금은\n영업 시간이 아니에요",
+    text: "사장님이 영업을 시작하면\n빈자리를 알려드릴게요.",
+    badge: true,
+    closed: true,
+  });
 }
 
 // 시간이 흐르면 바뀌는 부분: "N분 전 업데이트", '정보 오래됨'
 //   페이지를 열어둔 채 시간이 지나도 맞도록 주기적으로 다시 계산한다.
 let freshnessTimer = null;
 
-function startFreshnessUpdates(baseMeta, lastUpdatedAt, open) {
+function stopFreshnessUpdates() {
+  if (freshnessTimer) clearInterval(freshnessTimer);
+  freshnessTimer = null;
+}
+
+function startFreshnessUpdates(lastUpdatedAt) {
+  const $ = (id) => document.getElementById(id);
   const update = () => {
-    const $ = (id) => document.getElementById(id);
-    $("meta").textContent = baseMeta + (lastUpdatedAt ? ` · ${timeAgo(lastUpdatedAt)} 업데이트` : "");
-    // 영업 종료면 오래됨 경고는 의미가 없으므로 숨긴다.
-    // 상태가 한 번도 바뀌지 않았으면 lastUpdatedAt 이 없을 수 있음 → 오래됨으로 보지 않는다.
-    $("stale").hidden = !(open && lastUpdatedAt && isStale(lastUpdatedAt));
+    $("statusText").textContent = "영업 중" + (lastUpdatedAt ? ` · ${timeAgo(lastUpdatedAt)} 업데이트` : "");
+    // 상태가 한 번도 바뀌지 않았으면 lastUpdatedAt 이 없을 수 있음 → 오래됨으로 보지 않는다
+    const stale = Boolean(lastUpdatedAt && isStale(lastUpdatedAt));
+    $("stale").hidden = !stale;
+    if (stale) $("staleMinutes").textContent = durationText(lastUpdatedAt);
   };
 
   update();
-  if (freshnessTimer) clearInterval(freshnessTimer);
+  stopFreshnessUpdates();
   // ?now= 로 시각을 고정한 경우에는 바뀔 일이 없으므로 타이머를 돌리지 않는다
   if (!PARAMS.get("now")) freshnessTimer = setInterval(update, 30 * 1000);
 }
@@ -609,47 +674,143 @@ function renderSummary(layout, snapshot, occupied) {
 
   if (!snapshot) {
     // 배치 파일만 열었을 때: 상태를 모르므로 요약 대신 안내
-    $("store").textContent = "";
-    $("headline").textContent = "배치 미리보기";
-    $("meta").textContent = "상태 정보가 없어서 테이블이 회색으로 보여요 (?sample=snapshot 으로 확인)";
+    setView("preview");
+    $("store").textContent = "배치 미리보기";
+    $("statusChip").hidden = true;
     $("stale").hidden = true;
+    showNotice({ title: "상태 정보가 없어요", text: "테이블이 회색으로 보여요. ?sample=snapshot 으로 확인할 수 있어요." });
     return;
   }
 
   const { store, lastUpdatedAt } = snapshot;
-  const { free, unknown, total } = countTables(layout, occupied);
 
-  // 매장 이름 · 영업 여부
-  $("store").innerHTML = "";
-  $("store").append(store.name, " · ");
-  const openLabel = document.createElement("span");
-  openLabel.textContent = store.open ? "영업 중" : "영업 종료";
-  if (!store.open) openLabel.className = "closed";
-  $("store").append(openLabel);
-
-  // 큰 문구: 영업 종료 > 상태 모름 > 빈자리 있음 > 빈자리 없음 순으로 판단
-  $("headline").innerHTML = "";
-  if (!store.open) {
-    $("headline").textContent = "지금은 영업하지 않아요";
-  } else if (total === 0) {
-    // 벽만 먼저 저장하고 테이블은 아직 등록하지 않은 매장 (#14: 테이블 0개 허용)
-    $("headline").textContent = "아직 테이블을 준비하고 있어요";
-  } else if (total > 0 && unknown === total) {
-    $("headline").textContent = "아직 빈자리 정보가 없어요";
-  } else if (free > 0) {
-    const count = document.createElement("span");
-    count.className = "count";
-    count.textContent = `${free}개`;
-    $("headline").append("지금 빈자리 ", count, " 있어요");
-  } else if (unknown > 0) {
-    // 확인된 빈자리는 없지만 상태를 모르는 테이블이 있음 → '없다'고 단정하지 않는다
-    $("headline").textContent = "확인된 빈자리가 없어요";
-  } else {
-    $("headline").textContent = "지금은 빈자리가 없어요";
+  // B. 영업 종료 (사장님 모드는 앱이 영업 상태를 따로 보여주므로 배치도를 그대로 둔다)
+  if (!store.open && MODE !== "owner") {
+    showClosed(store.name);
+    return;
   }
 
-  const baseMeta = `빈 테이블 ${free} / 전체 ${total}` + (unknown > 0 ? ` · 상태 미확인 ${unknown}` : "");
-  startFreshnessUpdates(baseMeta, lastUpdatedAt, store.open);
+  setView("normal");
+  hideNotice();
+  $("store").textContent = store.name;
+  $("statusChip").hidden = false;
+
+  // 빈자리 카드: 지금 보는 층 큰 숫자 + 매장 전체
+  const floor = countIds(tableIdsOf(viewer.floor), occupied);
+  const all = countTables(layout, occupied);
+
+  $("summaryLabel").textContent = `지금 ${viewer.floor?.name ?? ""} 빈자리`;
+  $("floorTotal").textContent = `/ ${floor.total}`;
+
+  let note = "";
+  if (floor.total === 0) {
+    // 벽만 먼저 저장하고 테이블은 아직 등록하지 않은 층 (#14: 테이블 0개 허용)
+    $("freeCount").textContent = "0";
+    note = "아직 테이블을 준비하고 있어요";
+  } else if (floor.unknown === floor.total) {
+    $("freeCount").textContent = "–";
+    note = "아직 빈자리 정보가 없어요";
+  } else {
+    $("freeCount").textContent = String(floor.free);
+    // 상태를 모르는 테이블이 있으면 '없다'고 단정하지 않도록 함께 알림
+    if (floor.unknown > 0) note = `상태 미확인 ${floor.unknown}`;
+  }
+  $("summaryNote").textContent = note;
+  $("summaryNote").hidden = !note;
+
+  // 층이 2개 이상일 때만 매장 전체
+  const multiFloor = layout.floors.length > 1;
+  $("storeTotal").hidden = !multiFloor;
+  $("storeTotalValue").textContent = `${all.free} / ${all.total}`;
+
+  startFreshnessUpdates(lastUpdatedAt);
+}
+
+// ---------- 층 선택 칩 (#53) ----------
+// "1층 · 빈3". 층이 2개 이상일 때만 보이고, 누르면 그 층을 그린다
+function renderFloorTabs() {
+  const nav = document.getElementById("floorTabs");
+  const floors = [...(viewer.layout?.floors ?? [])].sort((a, b) => a.order - b.order);
+  // 버튼을 새로 만들면 키보드 포커스가 사라진다 → 층 칩에 포커스가 있었으면 같은 층 버튼으로 되돌림
+  const focusedFloorId = nav.contains(document.activeElement) ? document.activeElement.dataset.floorId : null;
+  nav.hidden = floors.length < 2;
+  nav.replaceChildren(...floors.map((floor) => {
+    const { free } = countIds(tableIdsOf(floor), viewer.occupied);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "floor-tab";
+    btn.dataset.floorId = floor.id;
+    btn.textContent = `${floor.name} · 빈${free}`;
+    btn.setAttribute("aria-pressed", String(floor.id === viewer.floor?.id));
+    btn.addEventListener("click", () => {
+      if (floor.id === viewer.floor?.id) return;
+      viewer.floor = floor;
+      document.getElementById("floorName").textContent = floor.name;
+      refresh();
+    });
+    return btn;
+  }));
+  if (focusedFloorId) {
+    [...nav.children].find((b) => b.dataset.floorId === focusedFloorId)?.focus();
+  }
+}
+
+// ---------- 테이블 목록 (#53) ----------
+// 빈자리 → 상태 모름 → 사용 중 순, 같은 상태끼리는 이름순 (1번, 2번, 10번)
+function tableLabel(name) {
+  return /번$/.test(name) ? `${name} 테이블` : name;
+}
+
+function renderTableList() {
+  const list = document.getElementById("tableList");
+  const rank = (id) => (viewer.occupied.get(id) === false ? 0 : viewer.occupied.has(id) ? 2 : 1);
+  const tables = [...(viewer.floor?.tables ?? [])].sort(
+    (a, b) => rank(a.id) - rank(b.id) || a.name.localeCompare(b.name, "ko", { numeric: true }),
+  );
+
+  list.replaceChildren(...tables.map((t) => {
+    const state = ["free", "unknown", "busy"][rank(t.id)];
+    const li = document.createElement("li");
+    li.className = state;
+    const name = document.createElement("span");
+    name.className = "table-name";
+    name.textContent = tableLabel(t.name);
+    const badge = document.createElement("span");
+    badge.className = `badge ${state}`;
+    badge.textContent = { free: "빈자리", unknown: "확인 중", busy: "사용 중" }[state];
+    li.append(name, badge);
+    return li;
+  }));
+}
+
+// ---------- 공유 버튼 (#53) ----------
+// 휴대폰은 공유 창(카톡 등), 지원하지 않으면 링크 복사
+function setupShare() {
+  const btn = document.getElementById("shareBtn");
+  btn.addEventListener("click", async () => {
+    const url = location.origin + location.pathname;
+    const title = viewer.snapshot?.store?.name ? `${viewer.snapshot.store.name} 빈자리` : "자리있어";
+    try {
+      if (navigator.share) {
+        await navigator.share({ title, url });
+        return;
+      }
+      await navigator.clipboard.writeText(url);
+      showToast("링크를 복사했어요");
+    } catch (e) {
+      // 공유 창을 그냥 닫은 경우는 조용히 넘어감
+      if (e?.name !== "AbortError") showToast("공유하지 못했어요");
+    }
+  });
+}
+
+let toastTimer = null;
+function showToast(text) {
+  const toast = document.getElementById("toast");
+  toast.textContent = text;
+  toast.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toast.hidden = true; }, 2000);
 }
 
 // ---------- 화면 상태 (#9) ----------
@@ -664,9 +825,9 @@ function refresh() {
     : null;
 
   renderSummary(viewer.layout, viewer.snapshot, viewer.occupied);
-  // 영업 종료면 지도를 흐리게 → 빈자리 색이 보여도 지금 갈 수 없다는 게 한눈에 보이게 (#20)
-  document.body.classList.toggle("is-closed", viewer.snapshot?.store?.open === false);
   draw(svg, viewer.floor, viewer.occupied, pendingTables);
+  renderFloorTabs();
+  renderTableList();
   // 사장님 모드: 빈자리 요약은 웹이 아니라 앱이 보여준다 → 숫자만 앱에 알림 (#49, bridge.js)
   if (MODE === "owner") reportSummary();
 
@@ -686,18 +847,25 @@ function pickFloors(floors) {
   return [found ?? floors[0]];
 }
 
-// 배치가 없는 매장: 지도 대신 안내 문구
+// C. 배치가 없는 매장: 지도 대신 안내 카드 (영업 종료면 B 가 먼저)
 function showNoLayout(snapshot) {
-  const $ = (id) => document.getElementById(id);
-  const open = snapshot?.store?.open !== false;
-  $("store").textContent = snapshot?.store?.name ?? "";
-  $("headline").textContent = open ? "아직 매장 배치를 준비하고 있어요" : "지금은 영업하지 않아요";
-  $("meta").textContent = open ? "사장님이 배치를 저장하면 여기에서 빈자리를 볼 수 있어요" : "";
-  $("stale").hidden = true;
   document.querySelector(".map").hidden = true;
-  // 사장님 모드는 평소 header 를 숨기지만, 배치가 없을 때는 안내 문구가 보여야 하므로 다시 보이게 (style.css)
-  document.body.classList.add("no-layout");
+  document.getElementById("floorTabs").hidden = true;
+  document.getElementById("tableList").replaceChildren();
   if (MODE === "owner") reportSummary();   // 테이블이 없으니 0 / 0
+
+  if (snapshot?.store?.open === false && MODE !== "owner") {
+    showClosed(snapshot.store.name);
+    return;
+  }
+  setView("nolayout");
+  stopFreshnessUpdates();
+  document.getElementById("store").textContent = snapshot?.store?.name ?? "";
+  showNotice({
+    icon: "layout",
+    title: "매장 배치도를\n준비하고 있어요",
+    text: "사장님이 매장을 스캔하면\n여기서 빈자리를 볼 수 있어요.",
+  });
 }
 
 // 데이터 { name, layout, snapshot } 로 화면 전체를 그린다 (#20)
@@ -722,7 +890,6 @@ function render({ name, layout, snapshot }) {
   viewer.occupied = new Map((snapshot?.statuses ?? []).map((s) => [s.tableId, s.occupied]));
 
   document.querySelector(".map").hidden = false;   // 배치 없음 화면에서 넘어온 경우 다시 보이게
-  document.body.classList.remove("no-layout");
   document.getElementById("floorName").textContent = viewer.floor.name;
   showInfo(name, floors);
   refresh();
@@ -738,6 +905,8 @@ function showInfo(name, floors) {
 // ---------- 시작 ----------
 async function main() {
   document.body.classList.add(`mode-${MODE}`);
+  document.body.classList.toggle("debug", DEBUG);
+  setupShare();
   if (DEBUG) {
     console.table({
       "(0,0)": toScreen(0, 0),
@@ -776,11 +945,20 @@ async function main() {
     //   내 탭은 applyStatus 와 SSE status 가 둘 다 오지만 같은 값이라 결과는 같고, onSummary 는 값이 같으면 다시 안 보낸다
     if (PUBLIC_ID) connectLive();
   } catch (e) {
-    // 출력·사장님 모드는 위쪽 안내 영역을 숨겨두므로, 실패하면 다시 보이게 해서 에러 문구가 나오도록 (#49)
+    // D. 없는 매장 · 불러오기 실패 (시안 D ⑫)
+    //   출력·사장님 모드는 안내 영역을 숨겨두므로, 실패하면 모드 표시를 떼서 안내 카드가 보이게 (#49)
     document.body.classList.remove("mode-export", "mode-owner");
-    document.getElementById("headline").textContent = MODE === "export" ? "이미지 만들기 실패" : "불러오기 실패";
-    document.querySelector(".map").hidden = true;   // 빈 지도 카드는 숨김
-    document.getElementById("meta").textContent = e.message;
+    setView("error");
+    document.querySelector(".map").hidden = true;
+    if (e.notFound) {
+      showNotice({
+        icon: "search",
+        title: "매장을 찾을 수 없어요",
+        text: "링크가 바뀌었을 수 있어요.\n매장에서 받은 QR이나 링크를\n다시 확인해 주세요.",
+      });
+    } else {
+      showNotice({ icon: "search", title: MODE === "export" ? "이미지 만들기 실패" : "불러오지 못했어요", text: e.message });
+    }
     console.error(e);
   }
 }
