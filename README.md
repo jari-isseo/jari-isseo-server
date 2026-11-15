@@ -138,11 +138,10 @@ bash deploy/deploy.sh
 
 | 단계 | 하는 일 |
 | --- | --- |
-| 1 | develop 이고, 커밋 안 한 변경·push 안 한 커밋이 없는지 확인 (아니면 멈춤) |
+| 1 | develop 이고, 변경·새 파일·push 안 한 커밋이 없는지 확인 (아니면 멈춤) |
 | 2 | `./gradlew clean test bootJar` (급할 때 `--skip-tests`) |
-| 3 | 서버에서 `git pull` → compose·nginx 설정도 같은 커밋으로 |
-| 4 | jar 업로드 (`deploy/app.jar`) |
-| 5 | `docker compose up -d --build` → API 응답 확인, 60초 안에 응답 없으면 직전 jar 로 되돌림 |
+| 3 | jar 업로드 (배포마다 다른 이름 → 동시에 배포해도 덮어쓰지 않음) |
+| 4 | 서버 잠금 → 서버 레포 변경 없는지 확인 → `git pull` (같은 커밋인지 확인) → jar 교체 → `docker compose up -d --build` → API 응답 확인. 실패하면 직전 jar 로 되돌림 |
 
 - 준비: Lightsail 기본 SSH 키를 `~/.ssh/LightsailDefaultKey-ap-northeast-2.pem` 에 둔다. 경로·서버가 다르면 `deploy/deploy.env.example` → `deploy/deploy.env`
 - 테스트는 로컬 MySQL 이 켜져 있어야 한다 (평소 테스트와 같음)
