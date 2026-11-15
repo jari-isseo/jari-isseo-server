@@ -9,6 +9,7 @@
 //  #20: 실시간 반영 (live.js) — 이벤트를 받으면 viewer 를 고치고 다시 그림
 //  #49: 사장님 모드는 배치도만 그리고, 빈자리 요약은 앱에 onSummary 로 전달
 //  #53: 디자인 시안 D (빈자리 카드·층 선택 칩·테이블 목록·상태별 안내 카드·공유)
+//  #32: 층 선택 규칙 (처음 열 층, ?floor=, 사장님 모드 마지막으로 본 층) + 다른 층 요약
 // =====================================================
 
 // ---------- 설정 ----------
@@ -718,12 +719,34 @@ function renderSummary(layout, snapshot, occupied) {
   $("summaryNote").textContent = note;
   $("summaryNote").hidden = !note;
 
-  // 층이 2개 이상일 때만 매장 전체
+  // 층이 2개 이상일 때만 매장 전체 + 다른 층 요약
   const multiFloor = layout.floors.length > 1;
   $("storeTotal").hidden = !multiFloor;
   $("storeTotalValue").textContent = `${all.free} / ${all.total}`;
+  renderOtherFloors(layout, occupied);
 
   startFreshnessUpdates(lastUpdatedAt);
+}
+
+// 다른 층 요약 (#32): "다른 층: 2층 빈 2 · 3층 만석"
+//   지금 보는 층을 뺀 나머지를 order 순으로. 빈자리 0 이고 테이블이 있으면 '만석'
+//   (상태를 모르는 테이블이 있으면 만석이라고 단정하지 않고 '확인 중')
+function floorStateText(floor, occupied) {
+  const c = countIds(tableIdsOf(floor), occupied);
+  if (c.total === 0) return "준비 중";
+  if (c.free > 0) return `빈 ${c.free}`;
+  return c.unknown > 0 ? "확인 중" : "만석";
+}
+
+function renderOtherFloors(layout, occupied) {
+  const el = document.getElementById("otherFloors");
+  const others = [...layout.floors]
+    .sort((a, b) => a.order - b.order)
+    .filter((f) => f.id !== viewer.floor?.id);
+  el.hidden = others.length === 0;
+  const label = document.createElement("b");
+  label.textContent = "다른 층";
+  el.replaceChildren(label, `: ${others.map((f) => `${f.name} ${floorStateText(f, occupied)}`).join(" · ")}`);
 }
 
 // ---------- 층 선택 칩 (#53) ----------
@@ -734,6 +757,7 @@ function renderFloorTabs() {
   // 버튼을 새로 만들면 키보드 포커스가 사라진다 → 층 칩에 포커스가 있었으면 같은 층 버튼으로 되돌림
   const focusedFloorId = nav.contains(document.activeElement) ? document.activeElement.dataset.floorId : null;
   nav.hidden = floors.length < 2;
+  document.body.classList.toggle("multi-floor", floors.length > 1);
   nav.replaceChildren(...floors.map((floor) => {
     const { free } = countIds(tableIdsOf(floor), viewer.occupied);
     const btn = document.createElement("button");
@@ -746,6 +770,7 @@ function renderFloorTabs() {
       if (floor.id === viewer.floor?.id) return;
       viewer.floor = floor;
       document.getElementById("floorName").textContent = floor.name;
+      rememberFloor(floor.id);
       refresh();
     });
     return btn;
@@ -839,12 +864,37 @@ function refresh() {
 // 그릴 층 고르기: ?floor={floorId} 가 있으면 그 층, 없거나 못 찾으면 order 0 층.
 //   출력 모드의 ?floor=all 이면 모든 층.
 //   (층 드롭다운·사장님 모드의 마지막 본 층은 #32에서)
+// 처음 열 층 (#32)
+//   1) ?floor={floorId} 가 있으면 그 층 (출력 모드는 ?floor=all 로 전체)
+//   2) 사장님 모드는 마지막으로 본 층 (localStorage, 매장별)
+//   3) 그 밖에는 order 가 가장 작은 층 (floors 는 order 순으로 정렬돼서 들어옴)
+//   지정한 층이 없어졌으면(배치 재저장 등) 첫 층
 function pickFloors(floors) {
   const wanted = PARAMS.get("floor");
   if (wanted === "all" && MODE === "export") return floors;
-  const found = floors.find((f) => f.id === wanted);
-  if (wanted && !found) console.warn(`floor=${wanted} 층이 없어서 첫 층을 보여줘요`);
-  return [found ?? floors[0]];
+  if (wanted) {
+    const found = floors.find((f) => f.id === wanted);
+    if (!found) console.warn(`floor=${wanted} 층이 없어서 첫 층을 보여줘요`);
+    return [found ?? floors[0]];
+  }
+  if (MODE === "owner") {
+    const last = floors.find((f) => f.id === recallFloor());
+    if (last) return [last];
+  }
+  return [floors[0]];
+}
+
+// 사장님 모드: 마지막으로 본 층 기억 (앱 WebView 를 다시 열어도 그 층부터)
+//   localStorage 는 막혀 있거나 비어 있을 수 있으므로 실패해도 무시
+const LAST_FLOOR_KEY = `jariisseo:lastFloor:${PUBLIC_ID || PARAMS.get("sample") || "local"}`;
+
+function rememberFloor(floorId) {
+  if (MODE !== "owner") return;
+  try { localStorage.setItem(LAST_FLOOR_KEY, floorId); } catch { /* 저장 못 해도 동작에는 지장 없음 */ }
+}
+
+function recallFloor() {
+  try { return localStorage.getItem(LAST_FLOOR_KEY); } catch { return null; }
 }
 
 // C. 배치가 없는 매장: 지도 대신 안내 카드 (영업 종료면 B 가 먼저)
@@ -886,6 +936,8 @@ function render({ name, layout, snapshot }) {
   const kept = viewer.floor && floors.find((f) => f.id === viewer.floor.id);
   viewer.layout = layout;
   viewer.floor = kept ?? pickFloors(floors)[0];
+  // 사장님 모드: 처음 열린 층도 기억 (?floor= 로 열었으면 다음에는 그 층부터)
+  rememberFloor(viewer.floor.id);
   // tableId → 손님 있음 여부
   viewer.occupied = new Map((snapshot?.statuses ?? []).map((s) => [s.tableId, s.occupied]));
 

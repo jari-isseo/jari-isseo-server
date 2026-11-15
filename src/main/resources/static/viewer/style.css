@@ -71,6 +71,12 @@ header { padding: 14px 18px 0; }
 .summary-side b { font-family: var(--num); font-size: 18px; font-weight: 700; }
 .summary-side[hidden], .summary-note[hidden] { display: none; }
 
+/* 다른 층 요약 (#32) */
+.other-floors { margin: 10px 22px 0; font-size: 13px; color: var(--muted); }
+.mode-owner .other-floors { margin: 8px 12px 0; }
+.other-floors[hidden] { display: none; }
+.other-floors b { color: var(--text); font-weight: 700; }
+
 /* ---------- A. 정보 오래됨 ---------- */
 .stale {
   display: flex; gap: 10px; align-items: flex-start;
@@ -162,6 +168,7 @@ body:not(.debug) .info { display: none; }
 
 /* ---------- 화면 상태별로 보이는 것 ---------- */
 /* B. 영업 종료 · C. 배치 없음: 매장 이름 + 안내 카드만 */
+.view-closed .other-floors, .view-nolayout .other-floors, .view-error .other-floors, .view-preview .other-floors { display: none; }
 .view-closed .status-chip, .view-closed .summary-card, .view-closed .stale,
 .view-nolayout .status-chip, .view-nolayout .summary-card, .view-nolayout .stale { display: none; }
 .view-closed .floor-tabs, .view-closed .map, .view-closed .table-list, .view-closed .footnote,
@@ -233,7 +240,6 @@ body:not(.debug) .info { display: none; }
 
 /* 사장님 모드: 요약·목록·개발 정보는 앱 화면과 겹치므로 숨기고 배치도를 크게 (#49) */
 .mode-owner header,
-.mode-owner .floor-tabs,
 .mode-owner .table-list,
 .mode-owner .map-caption,
 .mode-owner .footnote,
@@ -241,6 +247,9 @@ body:not(.debug) .info { display: none; }
 /* 단, 배치가 아직 없으면 안내 카드는 보여준다 */
 .mode-owner .notice { margin-top: 12px; }
 .mode-owner .map { padding: 8px 4px 0; margin-top: 0; }
+/* 사장님 모드도 층 칩으로 층을 고른다 (#32). 층이 여러 개면 칩이 층 이름을 대신함 */
+.mode-owner .floor-tabs { margin-top: 10px; padding: 0 8px 2px; }
+.mode-owner.multi-floor .floor-name { display: none; }
 .mode-owner #stage { max-height: 85vh; }
 .mode-owner { max-width: none; }   /* 앱 WebView 폭을 그대로 */
 
