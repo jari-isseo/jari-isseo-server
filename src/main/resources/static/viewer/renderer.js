@@ -622,10 +622,14 @@ function showNotice({ title, text = "", icon = null, badge = false, closed = fal
   $("noticeIcon").innerHTML = icon ? NOTICE_ICONS[icon] : "";
   $("noticeTitle").textContent = title;
   $("noticeText").textContent = text;
+  // 안내 카드는 hidden 으로 나타났다 사라지므로, 항상 있는 live region 으로 내용을 읽어 준다 (같은 내용이면 다시 읽지 않음)
+  const message = `${title} ${text}`.replace(/\n/g, " ").trim();
+  if ($("announcer").textContent !== message) $("announcer").textContent = message;
 }
 
 function hideNotice() {
   document.getElementById("notice").hidden = true;
+  document.getElementById("announcer").textContent = "";
 }
 
 function showClosed(storeName) {
@@ -727,12 +731,15 @@ function renderSummary(layout, snapshot, occupied) {
 function renderFloorTabs() {
   const nav = document.getElementById("floorTabs");
   const floors = [...(viewer.layout?.floors ?? [])].sort((a, b) => a.order - b.order);
+  // 버튼을 새로 만들면 키보드 포커스가 사라진다 → 층 칩에 포커스가 있었으면 같은 층 버튼으로 되돌림
+  const focusedFloorId = nav.contains(document.activeElement) ? document.activeElement.dataset.floorId : null;
   nav.hidden = floors.length < 2;
   nav.replaceChildren(...floors.map((floor) => {
     const { free } = countIds(tableIdsOf(floor), viewer.occupied);
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "floor-tab";
+    btn.dataset.floorId = floor.id;
     btn.textContent = `${floor.name} · 빈${free}`;
     btn.setAttribute("aria-pressed", String(floor.id === viewer.floor?.id));
     btn.addEventListener("click", () => {
@@ -743,6 +750,9 @@ function renderFloorTabs() {
     });
     return btn;
   }));
+  if (focusedFloorId) {
+    [...nav.children].find((b) => b.dataset.floorId === focusedFloorId)?.focus();
+  }
 }
 
 // ---------- 테이블 목록 (#53) ----------

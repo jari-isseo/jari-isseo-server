@@ -148,6 +148,12 @@ header { padding: 14px 18px 0; }
 /* 개발용 정보는 ?debug=1 일 때만 */
 body:not(.debug) .info { display: none; }
 
+/* 화면에는 안 보이고 화면 읽기 도구만 읽는 요소 */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
 .toast {
   position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%);
   padding: 10px 16px; border-radius: 999px; background: var(--brown); color: #fff; font-size: 13px;
