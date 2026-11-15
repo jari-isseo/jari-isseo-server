@@ -119,6 +119,30 @@ IntelliJ HTTP Client 로 서버 API 전체 흐름을 한 번에 실행할 수 �
 - 코드 목록: `global/error/ErrorCode.java`
 - `message`는 사용자에게 그대로 보여줄 수 있는 한국어 문장
 
+## 배포 (Lightsail + Docker Compose)
+
+서버: AWS Lightsail 서울, Ubuntu 24.04, Docker (#22). 앱과 MySQL 을 `deploy/docker-compose.yml` 로 한 번에 띄운다 (#23).
+
+```bash
+# 처음 한 번 (서버, 레포 루트)
+cp deploy/.env.example deploy/.env
+nano deploy/.env        # MYSQL_ROOT_PASSWORD, DB_PASSWORD, JWT_SECRET 채우기 (openssl rand -base64 48)
+
+# 빌드 + 실행 / 코드 갱신 후 다시 배포
+git pull
+docker compose -f deploy/docker-compose.yml up -d --build
+
+# 확인
+docker compose -f deploy/docker-compose.yml ps
+docker compose -f deploy/docker-compose.yml logs -f app
+curl -s http://localhost:8080/api/public/stores/nostore1     # {"code":"STORE_NOT_FOUND",...} 이면 정상
+```
+
+- 앱은 서버 안(`127.0.0.1:8080`)에서만 열린다. 인터넷 공개는 Nginx(80·443)가 맡는다
+- MySQL 은 포트를 열지 않는다. 앱만 compose 내부 네트워크로 접속
+- 비밀값은 서버의 `deploy/.env` 에만 있다. 레포에는 `deploy/.env.example` 만 올린다
+- 메모리 2GB 서버 기준: 앱 `-Xmx512m`, MySQL `innodb_buffer_pool_size=256M`, 스왑 2GB
+
 ## 문서
 
 - 노션 (요구사항 분석서 · API 정의서 · 개발 순서): https://app.notion.com/p/416db762435d8166b74aec1f4f8b1f4d
