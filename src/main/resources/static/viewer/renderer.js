@@ -936,6 +936,8 @@ function render({ name, layout, snapshot }) {
   const kept = viewer.floor && floors.find((f) => f.id === viewer.floor.id);
   viewer.layout = layout;
   viewer.floor = kept ?? pickFloors(floors)[0];
+  // 사장님 모드: 처음 열린 층도 기억 (?floor= 로 열었으면 다음에는 그 층부터)
+  rememberFloor(viewer.floor.id);
   // tableId → 손님 있음 여부
   viewer.occupied = new Map((snapshot?.statuses ?? []).map((s) => [s.tableId, s.occupied]));
 

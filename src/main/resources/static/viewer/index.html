@@ -39,9 +39,6 @@
       </div>
     </section>
 
-    <!-- 다른 층 요약: 다른 층: 2층 빈 2 · 3층 만석 (층이 2개 이상일 때, #32) -->
-    <p id="otherFloors" class="other-floors" hidden></p>
-
     <!-- A. 정보 오래됨 (30분 넘게 변경 없음, AC-05) -->
     <p id="stale" class="stale" hidden>
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
@@ -59,6 +56,9 @@
 
   <!-- 층 선택 칩: 1층 · 빈3 (층이 2개 이상일 때) -->
   <nav id="floorTabs" class="floor-tabs" aria-label="층 선택" hidden></nav>
+  <!-- 층 칩 아래 다른 층 요약: 다른 층: 2층 빈 2 · 3층 만석 (층이 2개 이상일 때, #32)
+       header 밖에 둬서 사장님 모드에서도 보임 -->
+  <p id="otherFloors" class="other-floors" hidden></p>
 
   <section class="map">
     <!-- 사장님 모드에서만 보이는 층 이름 -->
