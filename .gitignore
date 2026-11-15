@@ -39,3 +39,7 @@ out/
 ### Secrets ###
 .env
 *.keystore
+deploy/deploy.env
+
+### 배포 산출물 (#25) ###
+deploy/app.jar*

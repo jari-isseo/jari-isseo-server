@@ -127,19 +127,37 @@ IntelliJ HTTP Client 로 서버 API 전체 흐름을 한 번에 실행할 수 �
 인터넷 ─80─▶ nginx ──▶ app:8080 ──▶ mysql:3306
 ```
 
+### 재배포 (내 PC에서 명령 한 줄, #25)
+
+2GB 서버에서는 빌드하지 않는다. 내 PC 에서 jar 를 만들어 올리고, 서버는 jar 를 이미지에 얹어 재시작만 한다.
+
 ```bash
-# 처음 한 번 (서버, 레포 루트)
+# Git Bash (IntelliJ 터미널 ▼ → Git Bash), 레포 루트, develop 브랜치에서
+bash deploy/deploy.sh
+```
+
+| 단계 | 하는 일 |
+| --- | --- |
+| 1 | develop 이고, 변경·새 파일·push 안 한 커밋이 없는지 확인 (아니면 멈춤) |
+| 2 | `./gradlew clean test bootJar` (급할 때 `--skip-tests`) |
+| 3 | jar 업로드 (배포마다 다른 이름 → 동시에 배포해도 덮어쓰지 않음) |
+| 4 | 서버 잠금 → 서버 레포 변경 없는지 확인 → `git pull` (같은 커밋인지 확인) → jar 교체 → `docker compose up -d --build` → 앱(8080)·Nginx(80) 응답 확인. 실패하면 직전 jar 로 되돌림 |
+
+- 준비: Lightsail 기본 SSH 키를 `~/.ssh/LightsailDefaultKey-ap-northeast-2.pem` 에 둔다. 경로·서버가 다르면 `deploy/deploy.env.example` → `deploy/deploy.env`
+- 테스트는 로컬 MySQL 이 켜져 있어야 한다 (평소 테스트와 같음)
+- 터미널의 `java` 가 21 이어야 한다 (`java -version`)
+
+### 서버 처음 준비 (한 번만)
+
+```bash
+git clone https://github.com/jari-isseo/jari-isseo-server.git && cd jari-isseo-server
 cp deploy/.env.example deploy/.env
-nano deploy/.env        # MYSQL_ROOT_PASSWORD, DB_PASSWORD, JWT_SECRET 채우기 (openssl rand -base64 48)
+nano deploy/.env        # MYSQL_ROOT_PASSWORD, DB_PASSWORD, JWT_SECRET 채우기 (openssl rand -hex 48)
+# 그다음 내 PC 에서 bash deploy/deploy.sh
 
-# 빌드 + 실행 / 코드 갱신 후 다시 배포
-git pull
-docker compose -f deploy/docker-compose.yml up -d --build
-
-# 확인
+# 상태 / 로그
 docker compose -f deploy/docker-compose.yml ps
 docker compose -f deploy/docker-compose.yml logs -f app
-curl -s http://localhost:8080/api/public/stores/nostore1     # {"code":"STORE_NOT_FOUND",...} 이면 정상
 ```
 
 - 인터넷에는 Nginx(80)만 열린다. 앱은 서버 안(`127.0.0.1:8080`)에서만 열린다
