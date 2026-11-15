@@ -121,7 +121,11 @@ IntelliJ HTTP Client 로 서버 API 전체 흐름을 한 번에 실행할 수 �
 
 ## 배포 (Lightsail + Docker Compose)
 
-서버: AWS Lightsail 서울, Ubuntu 24.04, Docker (#22). 앱과 MySQL 을 `deploy/docker-compose.yml` 로 한 번에 띄운다 (#23).
+서버: AWS Lightsail 서울, Ubuntu 24.04, Docker (#22). Nginx·앱·MySQL 을 `deploy/docker-compose.yml` 로 한 번에 띄운다 (#23, #24).
+
+```
+인터넷 ─80─▶ nginx ──▶ app:8080 ──▶ mysql:3306
+```
 
 ```bash
 # 처음 한 번 (서버, 레포 루트)
@@ -138,7 +142,9 @@ docker compose -f deploy/docker-compose.yml logs -f app
 curl -s http://localhost:8080/api/public/stores/nostore1     # {"code":"STORE_NOT_FOUND",...} 이면 정상
 ```
 
-- 앱은 서버 안(`127.0.0.1:8080`)에서만 열린다. 인터넷 공개는 Nginx(80·443)가 맡는다
+- 인터넷에는 Nginx(80)만 열린다. 앱은 서버 안(`127.0.0.1:8080`)에서만 열린다
+- Nginx 설정은 `deploy/nginx.conf`. SSE 경로(`/api/public/stores/{publicId}/events`)는 버퍼링을 끄고 연결을 1시간까지 유지한다
+- `nginx.conf` 를 고친 뒤: `docker compose -f deploy/docker-compose.yml restart nginx`
 - MySQL 은 포트를 열지 않는다. 앱만 compose 내부 네트워크로 접속
 - 비밀값은 서버의 `deploy/.env` 에만 있다. 레포에는 `deploy/.env.example` 만 올린다
 - 메모리 2GB 서버 기준: 앱 `-Xmx512m`, MySQL `innodb_buffer_pool_size=256M`, 스왑 2GB
