@@ -169,7 +169,13 @@ docker compose -f deploy/docker-compose.yml logs -f app
 
 ### HTTPS (한 번만, #26)
 
-도메인 DNS A 레코드가 서버 고정 IP 를 가리키는 상태에서, 서버(레포 루트)에서 실행한다.
+준비 (먼저 확인):
+
+1. 도메인 DNS A 레코드가 서버 고정 IP 를 가리킨다 (`nslookup 도메인`)
+2. **Lightsail 방화벽에 HTTPS(TCP 443) 가 열려 있다**: Lightsail 콘솔 → 인스턴스 → 네트워킹 → IPv4 방화벽 → `HTTPS` 규칙(모든 IP) 추가.
+   `init-https.sh` 는 서버 안에서(127.0.0.1) 확인하므로 443 이 닫혀 있어도 성공으로 보인다. 닫힌 채 전환하면 `http://` 링크가 열리지 않는 `https://` 로 이동해서 손님 화면이 안 열린다
+
+그다음 서버(레포 루트)에서 실행한다.
 
 ```bash
 # deploy/.env 에 SERVER_DOMAIN, PUBLIC_BASE_URL(https://도메인) 넣고
