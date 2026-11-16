@@ -9,7 +9,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 COMPOSE=(docker compose -f deploy/docker-compose.yml)
-env_get() { grep -E "^$1=" deploy/.env | tail -n 1 | cut -d= -f2- || true; }
+source deploy/env-get.sh
 
 DOMAIN=$(env_get SERVER_DOMAIN)
 EMAIL=$(env_get CERTBOT_EMAIL)

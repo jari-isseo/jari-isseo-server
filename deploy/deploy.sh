@@ -115,7 +115,9 @@ echo "서버 커밋 일치: ${EXPECTED_SHA:0:7}"
 COMPOSE=(docker compose -f deploy/docker-compose.yml)
 
 # HTTPS 를 쓰면(#26) 80 은 https://도메인 으로 이동시키므로, 확인할 때 도메인을 이 서버(127.0.0.1)로 보내 따라감
-SERVER_DOMAIN=$(grep -E '^SERVER_DOMAIN=' deploy/.env 2>/dev/null | tail -n 1 | cut -d= -f2- || true)
+#   .env 값은 Compose 와 같은 방식으로 읽음 (따옴표 등)
+source deploy/env-get.sh
+SERVER_DOMAIN=$(env_get SERVER_DOMAIN)
 NGINX_CHECK=(curl -s --max-time 3 -L)
 [[ -n "$SERVER_DOMAIN" ]] && NGINX_CHECK+=(--resolve "$SERVER_DOMAIN:443:127.0.0.1")
 
