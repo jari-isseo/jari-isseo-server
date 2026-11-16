@@ -1,5 +1,6 @@
 # 배포용: Nginx + Spring Boot 앱 + MySQL (#23, #24)
-#   인터넷 → nginx(80) → app(8080) → mysql(3306)
+#   인터넷 → nginx(80·443) → app(8080) → mysql(3306)
+#   HTTPS 인증서: certbot (처음 한 번 deploy/init-https.sh, 이후 자동 갱신) (#26)
 #
 # 배포: 내 PC 레포 루트에서  bash deploy/deploy.sh  (jar 빌드 → 업로드 → 재시작, #25)
 #
@@ -10,7 +11,7 @@
 # 상태 / 로그 / 중지:
 #   docker compose -f deploy/docker-compose.yml ps
 #   docker compose -f deploy/docker-compose.yml logs -f app
-#   docker compose -f deploy/docker-compose.yml restart nginx    # nginx.conf 를 고친 뒤
+#   docker compose -f deploy/docker-compose.yml restart nginx    # deploy/nginx/ 설정을 고친 뒤
 #   docker compose -f deploy/docker-compose.yml down        # 데이터(볼륨)는 남는다
 #
 # .env 는 이 파일과 같은 폴더(deploy/.env)에서 자동으로 읽는다.
@@ -72,9 +73,27 @@ services:
     depends_on:
       - app
     ports:
-      - "80:80"        # 인터넷에 여는 유일한 포트 (HTTPS 443 은 5-5)
+      - "80:80"        # 인증서 발급·갱신 + HTTPS 로 이동
+      - "443:443"      # HTTPS (인증서가 있을 때)
+    environment:
+      SERVER_DOMAIN: ${SERVER_DOMAIN:-}
+    # 인증서가 있으면 HTTPS, 없으면 HTTP 설정을 만들어 띄움 (deploy/nginx/start.sh)
+    entrypoint: ["/bin/sh", "/opt/jari/start.sh"]
     volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro   # 설정은 레포에서 관리
+      - ./nginx:/opt/jari:ro                       # 설정은 레포에서 관리
+      - letsencrypt:/etc/letsencrypt:ro            # 인증서 (읽기만)
+      - certbot-www:/var/www/certbot:ro            # 발급·갱신 확인용 파일
+
+  certbot:
+    image: certbot/certbot:latest
+    restart: unless-stopped
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
+    # 12시간마다 갱신 시도 (만료 30일 전부터 실제로 갱신). Nginx 는 6시간마다 다시 읽어서 반영
+    entrypoint: ["/bin/sh", "-c", "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 43200 & wait $${!}; done"]
 
 volumes:
   mysql-data:
+  letsencrypt:
+  certbot-www:
