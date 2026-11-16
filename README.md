@@ -124,7 +124,7 @@ IntelliJ HTTP Client 로 서버 API 전체 흐름을 한 번에 실행할 수 �
 서버: AWS Lightsail 서울, Ubuntu 24.04, Docker (#22). Nginx·앱·MySQL 을 `deploy/docker-compose.yml` 로 한 번에 띄운다 (#23, #24).
 
 ```
-인터넷 ─80─▶ nginx ──▶ app:8080 ──▶ mysql:3306
+인터넷 ─80·443─▶ nginx ──▶ app:8080 ──▶ mysql:3306
 ```
 
 ### 재배포 (내 PC에서 명령 한 줄, #25)
@@ -160,12 +160,27 @@ docker compose -f deploy/docker-compose.yml ps
 docker compose -f deploy/docker-compose.yml logs -f app
 ```
 
-- 인터넷에는 Nginx(80)만 열린다. 앱은 서버 안(`127.0.0.1:8080`)에서만 열린다
-- Nginx 설정은 `deploy/nginx.conf`. SSE 경로(`/api/public/stores/{publicId}/events`)는 버퍼링을 끄고 연결을 1시간까지 유지한다
-- `nginx.conf` 를 고친 뒤: `docker compose -f deploy/docker-compose.yml restart nginx`
+- 인터넷에는 Nginx(80·443)만 열린다. 앱은 서버 안(`127.0.0.1:8080`)에서만 열린다
+- Nginx 설정은 `deploy/nginx/`. SSE 경로(`/api/public/stores/{publicId}/events`)는 버퍼링을 끄고 연결을 1시간까지 유지한다
+- `deploy/nginx/` 를 고친 뒤: `docker compose -f deploy/docker-compose.yml restart nginx`
 - MySQL 은 포트를 열지 않는다. 앱만 compose 내부 네트워크로 접속
 - 비밀값은 서버의 `deploy/.env` 에만 있다. 레포에는 `deploy/.env.example` 만 올린다
 - 메모리 2GB 서버 기준: 앱 `-Xmx512m`, MySQL `innodb_buffer_pool_size=256M`, 스왑 2GB
+
+### HTTPS (한 번만, #26)
+
+도메인 DNS A 레코드가 서버 고정 IP 를 가리키는 상태에서, 서버(레포 루트)에서 실행한다.
+
+```bash
+# deploy/.env 에 SERVER_DOMAIN, PUBLIC_BASE_URL(https://도메인) 넣고
+bash deploy/init-https.sh --dry-run   # 연습 (실제 발급 X)
+bash deploy/init-https.sh             # Let's Encrypt 인증서 발급 → Nginx HTTPS 전환
+```
+
+- 인증서 받기 전에는 HTTP(80) 로 그대로 동작하고, 받은 뒤에는 80 → 443 으로 이동한다 (`deploy/nginx/start.sh` 가 인증서 유무를 보고 설정을 만든다)
+- 갱신: `certbot` 컨테이너가 12시간마다 시도(만료 30일 전부터 실제 갱신), Nginx 는 6시간마다 설정을 다시 읽는다
+- 갱신 연습: `docker compose -f deploy/docker-compose.yml run --rm --entrypoint certbot certbot renew --dry-run --webroot -w /var/www/certbot`
+- Nginx 설정: `deploy/nginx/locations.conf` (앱 프록시·SSE), `deploy/nginx/start.sh` (HTTP/HTTPS server 블록)
 
 ## 문서
 
