@@ -16,6 +16,7 @@ import org.springframework.web.context.WebApplicationContext;
 import java.nio.charset.StandardCharsets;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -26,7 +27,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 // 손님 공개 스냅샷 API + /s/{publicId} 페이지 (API 정의서 5장·6장). 로컬 MySQL, rollback
-@SpringBootTest
+//   PUBLIC_BASE_URL 은 끝에 / 를 붙여 둔다 → og 주소에서 // 가 생기지 않는지도 함께 확인 (#28)
+@SpringBootTest(properties = "app.public-base-url=https://jari.example/")
 @Transactional
 class CustomerApiTest {
 
@@ -121,6 +123,55 @@ class CustomerApiTest {
         mvc.perform(get("/s/nostore1"))
                 .andExpect(status().isNotFound())
                 .andExpect(content().string(containsString("renderer.js")));
+    }
+
+    @Test
+    @DisplayName("#28 완료 조건: /s/{publicId} 에 매장 이름 og 태그가 들어간다 (카톡 링크 미리보기)")
+    void viewerPageOpenGraph() throws Exception {
+        mvc.perform(get("/s/" + publicId))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("<title>Cafe Moon 빈자리</title>")))
+                .andExpect(content().string(containsString("<meta property=\"og:title\" content=\"Cafe Moon 빈자리\">")))
+                .andExpect(content().string(containsString("<meta property=\"og:url\" content=\"https://jari.example/s/" + publicId + "\">")))
+                .andExpect(content().string(containsString("<meta property=\"og:image\" content=\"https://jari.example/viewer/og.png\">")))
+                .andExpect(content().string(containsString("og:description")))
+                // og 태그도 <base> 와 같이 <head> 안에 있어야 미리보기가 읽는다
+                .andExpect(content().string(containsString("<head>\n  <base href=\"/viewer/\">\n  <meta name=\"description\"")));
+    }
+
+    @Test
+    @DisplayName("#28 매장 이름의 따옴표·꺾쇠·$ 는 이스케이프되어 태그를 깨지 못한다")
+    void viewerPageOpenGraphEscapesStoreName() throws Exception {
+        String evil = "A\"><script>alert(1)</script>&$1";
+        String body = mvc.perform(post("/api/auth/signup").contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"loginId": "%s", "password": "password123", "storeName": "%s"}
+                                """.formatted("e" + System.nanoTime() % 1_000_000_000_000L, evil.replace("\"", "\\\""))))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        String evilId = JsonPath.read(body, "$.store.publicId");
+
+        mvc.perform(get("/s/" + evilId))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("content=\"A&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;&amp;$1 빈자리\"")))
+                .andExpect(content().string(not(containsString("<script>alert(1)"))));
+    }
+
+    @Test
+    @DisplayName("#28 없는 매장은 서비스 이름으로 미리보기")
+    void viewerPageOpenGraphUnknownStore() throws Exception {
+        mvc.perform(get("/s/nostore1"))
+                .andExpect(status().isNotFound())
+                .andExpect(content().string(containsString("<meta property=\"og:title\" content=\"자리있어?!\">")))
+                .andExpect(content().string(containsString("매장을 찾을 수 없어요")));
+    }
+
+    @Test
+    @DisplayName("#28 미리보기 이미지는 로그인 없이 받을 수 있다")
+    void openGraphImage() throws Exception {
+        mvc.perform(get("/viewer/og.png"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.IMAGE_PNG));
     }
 
     private void saveLayout(String... tableIds) throws Exception {
