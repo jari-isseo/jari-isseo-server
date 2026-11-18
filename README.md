@@ -15,7 +15,7 @@
 | 사장님 앱 (Android) | [jari-isseo-android](https://github.com/jari-isseo/jari-isseo-android) |
 | 기획 문서 (노션) | [요구사항 분석서 · API 정의서 · 개발 순서](https://app.notion.com/p/416db762435d8166b74aec1f4f8b1f4d) |
 
-2026 신한대학교 SW중심대학 앱개발 경진대회 출품작 · 팀원: 이민구(사장님 앱), 세헌(서버 · 손님 웹 · 배포)
+2026 신한대학교 SW중심대학 앱개발 경진대회 출품작 · 팀원: 이민구(사장님 앱), 정세헌(서버 · 손님 웹 · 배포)
 
 ## 서비스 흐름
 
