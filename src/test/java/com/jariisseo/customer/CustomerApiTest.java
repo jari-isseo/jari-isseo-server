@@ -6,7 +6,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -28,7 +27,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 // 손님 공개 스냅샷 API + /s/{publicId} 페이지 (API 정의서 5장·6장). 로컬 MySQL, rollback
-@SpringBootTest
+//   PUBLIC_BASE_URL 은 끝에 / 를 붙여 둔다 → og 주소에서 // 가 생기지 않는지도 함께 확인 (#28)
+@SpringBootTest(properties = "app.public-base-url=https://jari.example/")
 @Transactional
 class CustomerApiTest {
 
@@ -36,9 +36,6 @@ class CustomerApiTest {
     WebApplicationContext context;
     @Autowired
     StoreRepository storeRepository;
-
-    @Value("${app.public-base-url}")
-    String baseUrl;
 
     MockMvc mvc;
     String token;
@@ -135,8 +132,8 @@ class CustomerApiTest {
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("<title>Cafe Moon 빈자리</title>")))
                 .andExpect(content().string(containsString("<meta property=\"og:title\" content=\"Cafe Moon 빈자리\">")))
-                .andExpect(content().string(containsString("<meta property=\"og:url\" content=\"" + baseUrl + "/s/" + publicId + "\">")))
-                .andExpect(content().string(containsString("<meta property=\"og:image\" content=\"" + baseUrl + "/viewer/og.png\">")))
+                .andExpect(content().string(containsString("<meta property=\"og:url\" content=\"https://jari.example/s/" + publicId + "\">")))
+                .andExpect(content().string(containsString("<meta property=\"og:image\" content=\"https://jari.example/viewer/og.png\">")))
                 .andExpect(content().string(containsString("og:description")))
                 // og 태그도 <base> 와 같이 <head> 안에 있어야 미리보기가 읽는다
                 .andExpect(content().string(containsString("<head>\n  <base href=\"/viewer/\">\n  <meta name=\"description\"")));
