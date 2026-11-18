@@ -26,7 +26,7 @@
     │   ├── auth/                       가입·로그인, JWT 발급
     │   ├── store/                      매장 (Store, publicId 생성, 내 매장 조회)
     │   ├── layout/                     배치 (Layout JSON 컬럼, 조회·저장 API, 검증)
-    │   ├── customer/                   손님 공개 스냅샷 API, /s/{publicId} 페이지
+    │   ├── customer/                   손님 공개 스냅샷 API, /s/{publicId} 페이지 (+ 링크 미리보기 og 태그)
     │   ├── status/                     테이블 상태 (TableStatus 복합 키, 상태 전환·전체 비우기 API)
     │   └── global/
     │       ├── config/                 공통 설정 (Security·JWT, Swagger, dev 샘플 경로)
